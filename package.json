@@ -1,0 +1,39 @@
+{
+  "name": "nexus-command-center",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Private two-person futuristic market command center and realtime chat. Runs at $0/month on Netlify + Supabase free tiers.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.3.0",
+    "@supabase/supabase-js": "^2.57.0",
+    "framer-motion": "^12.23.0",
+    "lightweight-charts": "^5.0.8",
+    "lucide-react": "^1.48.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.8.0",
+    "three": "^0.180.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-react": "^5.0.2",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.5"
+  }
+}

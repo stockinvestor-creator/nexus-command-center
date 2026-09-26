@@ -1,0 +1,429 @@
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Building2, Gauge, MessageSquare, NotebookPen, Plus, Save, Share2, Star, Swords, Zap } from 'lucide-react';
+import { useCompanyProfile, useQuote } from '@/hooks/useMarket';
+import { useLiveTable } from '@/hooks/useLiveTable';
+import { useAuth } from '@/store/authStore';
+import { useSettings } from '@/store/settingsStore';
+import { attempt, toast } from '@/store/toastStore';
+import { isValidSymbol, normalizeSymbol } from '@/lib/tickers';
+import { cn } from '@/lib/cn';
+import { fmtChange, fmtCompact, fmtDate, fmtNumber, fmtPct, fmtPrice, timeAgo, trendClass } from '@/lib/format';
+import { lookupUniverse } from '@/services/market/universe';
+import { backend } from '@/services/backend';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Textarea, Select, Field, Input } from '@/components/ui/Field';
+import { EmptyState, SkeletonRows } from '@/components/ui/States';
+import { Avatar } from '@/components/ui/Avatar';
+import { ClickRow } from '@/components/ui/ClickRow';
+import { TradingViewWidget, tv } from '@/components/widgets/TradingViewWidget';
+import { SmartStockChart } from '@/features/market/SmartStockChart';
+import { MarketStatusPill } from '@/features/market/MarketStatus';
+import { saveTickerNote, type ScoreKey } from '@/features/market/api';
+import { useWatchToggle, updateWatchItem } from '@/features/watchlist/api';
+import { BIAS_META, CAT_STATUS_META } from '@/features/catalysts/api';
+import { STATUS_META } from '@/features/trades/api';
+import { TradeForm } from '@/features/trades/TradeForm';
+import { MessageContent } from '@/features/chat/MessageContent';
+import { ShareStockModal } from '@/features/chat/ShareStockModal';
+import { sendMessage } from '@/features/chat/api';
+import { RISK_LEVELS, WATCH_CATEGORIES, WATCH_DIRECTIONS, type Channel, type Message, type StockShareMeta, type TickerNote } from '@/types/db';
+
+const SCORES: { key: ScoreKey; label: string; hint: string; gradient: string }[] = [
+  { key: 'catalyst_score', label: 'Catalyst score', hint: 'Strength/proximity of known catalysts', gradient: 'from-violet-500 to-fuchsia-400' },
+  { key: 'momentum_score', label: 'Momentum score', hint: 'Your read of trend & relative strength', gradient: 'from-cyan-500 to-emerald-400' },
+  { key: 'volatility_score', label: 'Volatility score', hint: 'Expected swing size', gradient: 'from-amber-500 to-orange-400' },
+  { key: 'risk_score', label: 'Risk score', hint: 'Dilution, float, balance-sheet, event risk', gradient: 'from-rose-500 to-pink-400' },
+];
+
+function ScorePanel({ symbol, note }: { symbol: string; note: TickerNote | undefined }) {
+  const editor = useAuth((s) => s.profiles.find((p) => p.id === note?.updated_by));
+  const [edit, setEdit] = useState(false);
+  const [vals, setVals] = useState<Record<ScoreKey, number | null>>({ catalyst_score: null, momentum_score: null, volatility_score: null, risk_score: null });
+  useEffect(() => {
+    setVals({
+      catalyst_score: note?.catalyst_score ?? null,
+      momentum_score: note?.momentum_score ?? null,
+      volatility_score: note?.volatility_score ?? null,
+      risk_score: note?.risk_score ?? null,
+    });
+  }, [note]);
+  const save = async () => {
+    const ok = await attempt(() => saveTickerNote(symbol, vals), 'Could not save scores');
+    if (ok) {
+      toast.success('Scores saved');
+      setEdit(false);
+    }
+  };
+  return (
+    <GlassCard
+      title="Scores"
+      icon={<Gauge />}
+      badge={<Badge tone="neutral" title="Scores are entered manually by you and your partner. The app does not generate financial analysis.">manual</Badge>}
+      actions={
+        edit ? (
+          <Button size="xs" variant="primary" onClick={save} icon={<Save className="h-3 w-3" />}>
+            Save
+          </Button>
+        ) : (
+          <Button size="xs" variant="ghost" onClick={() => setEdit(true)}>
+            Edit
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-4">
+        {SCORES.map((s) => {
+          const v = vals[s.key];
+          return (
+            <div key={s.key}>
+              <div className="flex items-baseline justify-between">
+                <span className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300">{s.label}</span>
+                <span className="num text-lg font-semibold text-white">{v ?? '—'}</span>
+              </div>
+              {edit ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={v ?? 50}
+                    onChange={(e) => setVals((x) => ({ ...x, [s.key]: Number(e.target.value) }))}
+                    className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-cyan-400"
+                  />
+                  <button onClick={() => setVals((x) => ({ ...x, [s.key]: null }))} className="text-[10px] text-slate-500 hover:text-white">
+                    clear
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/5">
+                  <div className={cn('h-full rounded-full bg-gradient-to-r shadow-glow transition-all duration-700', s.gradient)} style={{ width: `${v ?? 0}%` }} />
+                </div>
+              )}
+              <p className="mt-1 text-[10px] text-slate-600">{s.hint}</p>
+            </div>
+          );
+        })}
+        <p className="border-t border-white/5 pt-2 text-[10px] text-slate-600">
+          {note?.updated_at ? `Last edited by ${editor?.display_name ?? 'someone'} ${timeAgo(note.updated_at)}.` : 'Not scored yet.'} 0–100, set by you — not computed.
+        </p>
+      </div>
+    </GlassCard>
+  );
+}
+
+function ThesisNotes({ symbol, note }: { symbol: string; note: TickerNote | undefined }) {
+  const [text, setText] = useState(note?.thesis ?? '');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setText(note?.thesis ?? ''), [note?.thesis]);
+  const dirty = text !== (note?.thesis ?? '');
+  return (
+    <GlassCard
+      title="Shared thesis notes"
+      icon={<NotebookPen />}
+      actions={
+        dirty && (
+          <Button
+            size="xs"
+            variant="primary"
+            loading={saving}
+            icon={<Save className="h-3 w-3" />}
+            onClick={async () => {
+              setSaving(true);
+              const ok = await attempt(() => saveTickerNote(symbol, { thesis: text.trim() || null }));
+              setSaving(false);
+              if (ok) toast.success('Thesis saved');
+            }}
+          >
+            Save
+          </Button>
+        )
+      }
+    >
+      <Textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={`Shared notes on $${symbol}: thesis, levels, risks, what would change your mind…`} />
+      <p className="mt-1.5 text-[10px] text-slate-600">Visible to both operators. Supports $TICKER references.</p>
+    </GlassCard>
+  );
+}
+
+function WatchControls({ symbol }: { symbol: string }) {
+  const { item, toggle, active } = useWatchToggle(symbol);
+  return (
+    <GlassCard title="Watchlist" icon={<Star />}>
+      {!item ? (
+        <div className="space-y-2 text-center">
+          <p className="text-xs text-slate-500">Not on {active?.name ?? 'your watchlist'}.</p>
+          <Button variant="outline" className="w-full" icon={<Plus className="h-4 w-4" />} onClick={toggle}>
+            Add ${symbol}
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Side">
+            <Select value={item.direction} onChange={(v) => void attempt(() => updateWatchItem(item.id, { direction: v }))} options={WATCH_DIRECTIONS} />
+          </Field>
+          <Field label="Risk">
+            <Select value={item.risk_level} onChange={(v) => void attempt(() => updateWatchItem(item.id, { risk_level: v }))} options={RISK_LEVELS} />
+          </Field>
+          <Field label="Category" className="col-span-2">
+            <Select value={item.category} onChange={(v) => void attempt(() => updateWatchItem(item.id, { category: v }))} options={WATCH_CATEGORIES} />
+          </Field>
+          <Field label="Catalyst date" className="col-span-2">
+            <Input type="date" value={item.catalyst_date ?? ''} onChange={(e) => void attempt(() => updateWatchItem(item.id, { catalyst_date: e.target.value || null }))} />
+          </Field>
+          <div className="col-span-2 flex gap-2">
+            <Button size="sm" className="flex-1" variant={item.favorite ? 'outline' : 'secondary'} icon={<Star className={cn('h-3.5 w-3.5', item.favorite && 'fill-current')} />} onClick={() => void attempt(() => updateWatchItem(item.id, { favorite: !item.favorite }))}>
+              {item.favorite ? 'Favorite' : 'Favorite?'}
+            </Button>
+            <Button size="sm" variant="danger" onClick={toggle}>
+              Remove
+            </Button>
+          </div>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+export default function StockDetail() {
+  const params = useParams();
+  const symbol = normalizeSymbol(params.symbol ?? '');
+  const { data: q, loading: qLoading, error: qError } = useQuote(isValidSymbol(symbol) ? symbol : null);
+  const profile = useCompanyProfile(isValidSymbol(symbol) ? symbol : null);
+  const notes = useLiveTable('ticker_notes', { eq: { symbol } });
+  const catalysts = useLiveTable('catalysts', { eq: { symbol }, order: { column: 'catalyst_date', ascending: true } });
+  const trades = useLiveTable('trade_ideas', { eq: { symbol }, order: { column: 'updated_at', ascending: false } });
+  const profiles = useAuth((s) => s.profiles);
+  const symbolInfoOn = useSettings((s) => s.widgets.symbolInfo);
+  const [mentions, setMentions] = useState<Message[] | null>(null);
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isValidSymbol(symbol)) return;
+    let alive = true;
+    setMentions(null);
+    backend
+      .select('messages', { ilike: { column: 'content', pattern: `%$${symbol}%` }, order: { column: 'created_at', ascending: false }, limit: 20 })
+      .then((rows) => alive && setMentions(rows.filter((m) => new RegExp(`\\$${symbol.replace('.', '\\.')}\\b`, 'i').test(m.content))))
+      .catch(() => alive && setMentions([]));
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
+
+  if (!isValidSymbol(symbol)) return <EmptyState title="Invalid ticker" body="Use letters, numbers, dots or dashes (e.g. BRK.B)." />;
+
+  const company = profile.data?.name ?? lookupUniverse(symbol)?.name;
+  const note = notes.rows[0];
+
+  const shareToGeneral = async (meta: StockShareMeta, comment: string) => {
+    const chans = await backend.select('channels', { eq: { slug: 'stocks' } });
+    const ch: Channel | undefined = chans[0] ?? (await backend.select('channels', { eq: { type: 'channel' } }))[0];
+    if (!ch) return toast.error('No channel to share to');
+    const ok = await attempt(() => sendMessage({ channel: ch, content: comment, kind: 'stock_share', metadata: { stock: meta }, memberIds: profiles.map((p) => p.id) }));
+    if (ok) toast.success(`Shared to #${ch.name}`, undefined);
+  };
+
+  return (
+    <div className="pb-4">
+      {/* header */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 px-3 pb-4 pt-5 sm:px-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-3xl font-bold tracking-wide text-white [text-shadow:0_0_30px_rgba(34,211,238,0.35)]">${symbol}</h1>
+            {q && <FreshnessBadge freshness={q.freshness} asOf={q.asOf} />}
+          </div>
+          <p className="text-sm text-slate-400">
+            {company ?? '—'}
+            {profile.data?.exchange && <span className="text-slate-600"> · {profile.data.exchange}</span>}
+          </p>
+        </div>
+        <div>
+          {qLoading && !q ? (
+            <div className="h-9 w-40 animate-pulse rounded-lg bg-white/5" />
+          ) : qError && !q ? (
+            <p className="text-sm text-amber-400">{qError.message}</p>
+          ) : (
+            <div className="flex items-baseline gap-3">
+              <AnimatedNumber value={q?.price} format={fmtPrice} className="text-3xl font-semibold text-white" />
+              <span className={cn('num text-base', trendClass(q?.changePercent))}>
+                {fmtChange(q?.change)} ({fmtPct(q?.changePercent)})
+              </span>
+            </div>
+          )}
+        </div>
+        <MarketStatusPill />
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" icon={<Share2 className="h-4 w-4" />} onClick={() => setShareOpen(true)}>
+            Share to chat
+          </Button>
+          <Button size="sm" variant="primary" icon={<Swords className="h-4 w-4" />} onClick={() => setTradeOpen(true)}>
+            New trade idea
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 px-3 sm:px-5 xl:grid-cols-12">
+        <div className="space-y-3 xl:col-span-9">
+          <div className="h-[540px]">
+            <SmartStockChart symbol={symbol} company={company} />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            {[
+              ['Open', fmtPrice(q?.open)],
+              ['High', fmtPrice(q?.high)],
+              ['Low', fmtPrice(q?.low)],
+              ['Prev close', fmtPrice(q?.previousClose)],
+              ['Volume', fmtCompact(q?.volume)],
+              ['Market cap', fmtCompact(profile.data?.marketCap)],
+              ['52w range', profile.data?.week52Low != null ? `${fmtNumber(profile.data.week52Low)} – ${fmtNumber(profile.data.week52High)}` : '—'],
+              ['P/E', profile.data?.peRatio != null ? fmtNumber(profile.data.peRatio) : '—'],
+            ].map(([l, v]) => (
+              <div key={l} className="glass px-3 py-2.5">
+                <div className="label">{l}</div>
+                <div className="num mt-0.5 text-sm text-slate-100">{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ThesisNotes symbol={symbol} note={note} />
+            <GlassCard title="Company" icon={<Building2 />} badge={profile.data && <FreshnessBadge freshness={profile.data.freshness} />}>
+              {profile.loading && !profile.data ? (
+                <SkeletonRows rows={3} />
+              ) : profile.error && !profile.data ? (
+                <p className="text-xs text-slate-500">{profile.error.message}</p>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <div className="flex flex-wrap gap-1.5">
+                    {profile.data?.sector && <Badge tone="blue">{profile.data.sector}</Badge>}
+                    {profile.data?.industry && <Badge tone="violet">{profile.data.industry}</Badge>}
+                  </div>
+                  <p className="line-clamp-6 text-xs leading-relaxed text-slate-400">{profile.data?.description ?? 'No description available.'}</p>
+                  {profile.data?.website && /^https?:\/\//.test(profile.data.website) && (
+                    <a href={profile.data.website} target="_blank" rel="noopener noreferrer" className="text-xs text-neon-cyan hover:underline">
+                      {profile.data.website}
+                    </a>
+                  )}
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <GlassCard
+              title={`Catalysts · ${catalysts.rows.length}`}
+              icon={<Zap />}
+              actions={
+                <Link to="/catalysts" className="text-[11px] text-neon-cyan hover:underline">
+                  Log one
+                </Link>
+              }
+            >
+              {catalysts.loading ? (
+                <SkeletonRows rows={3} />
+              ) : catalysts.rows.length === 0 ? (
+                <EmptyState icon={<Zap />} title={`No catalysts for $${symbol}`} />
+              ) : (
+                <ul className="space-y-1.5">
+                  {catalysts.rows.map((c) => (
+                    <li key={c.id}>
+                      <ClickRow to={`/catalysts?focus=${c.id}`} className="block rounded-xl border border-white/5 bg-white/[0.02] p-2.5 hover:border-neon-cyan/20">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge tone="violet">{c.catalyst_type}</Badge>
+                          <Badge tone={BIAS_META[c.bias].tone}>{BIAS_META[c.bias].label}</Badge>
+                          <Badge tone={CAT_STATUS_META[c.status].tone}>{CAT_STATUS_META[c.status].label}</Badge>
+                          <span className="ml-auto font-mono text-[10px] text-slate-500">{fmtDate(c.catalyst_date)}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-300">{c.headline}</p>
+                      </ClickRow>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </GlassCard>
+
+            <GlassCard title={`Trade ideas · ${trades.rows.length}`} icon={<Swords />}>
+              {trades.loading ? (
+                <SkeletonRows rows={3} />
+              ) : trades.rows.length === 0 ? (
+                <EmptyState
+                  icon={<Swords />}
+                  title="No shared ideas yet"
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setTradeOpen(true)}>
+                      Post one
+                    </Button>
+                  }
+                />
+              ) : (
+                <ul className="space-y-1.5">
+                  {trades.rows.map((t) => (
+                    <li key={t.id}>
+                      <ClickRow to={`/war-room?trade=${t.id}`} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-2.5 hover:border-neon-cyan/20">
+                        <Badge tone={t.direction === 'long' ? 'green' : 'red'}>{t.direction}</Badge>
+                        <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{t.thesis ?? t.catalyst ?? '—'}</span>
+                        <Badge tone={STATUS_META[t.status].tone}>{STATUS_META[t.status].label}</Badge>
+                      </ClickRow>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </GlassCard>
+          </div>
+
+          <GlassCard title="Messages mentioning this ticker" icon={<MessageSquare />}>
+            {mentions == null ? (
+              <SkeletonRows rows={3} />
+            ) : mentions.length === 0 ? (
+              <EmptyState icon={<MessageSquare />} title={`Nobody has mentioned $${symbol} yet`} />
+            ) : (
+              <ul className="space-y-1">
+                {mentions.map((m) => {
+                  const p = profiles.find((x) => x.id === m.user_id);
+                  return (
+                    <li key={m.id}>
+                      <ClickRow to={`/messages/${m.channel_id}`} className="flex gap-2.5 rounded-xl px-2 py-2 hover:bg-white/[0.03]">
+                        <Avatar profile={p} size={24} />
+                        <div className="min-w-0">
+                          <div className="text-[11px]">
+                            <span className="text-slate-300">{p?.display_name}</span> <span className="font-mono text-slate-600">{timeAgo(m.created_at)}</span>
+                          </div>
+                          <p className="line-clamp-2 text-xs text-slate-400">
+                            <MessageContent text={m.content} />
+                          </p>
+                        </div>
+                      </ClickRow>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </GlassCard>
+
+          {symbolInfoOn && (
+            <GlassCard title="TradingView symbol info" badge={<FreshnessBadge freshness="DELAYED" note="TradingView widget" />} bodyClassName="p-0" collapseId="tv-symbol-info">
+              <div className="h-[200px]">
+                <TradingViewWidget script="symbol-info" config={tv.symbolInfo(symbol)} />
+              </div>
+            </GlassCard>
+          )}
+        </div>
+
+        <div className="space-y-3 xl:col-span-3">
+          <ScorePanel symbol={symbol} note={note} />
+          <WatchControls symbol={symbol} />
+        </div>
+      </div>
+
+      <TradeForm open={tradeOpen} onClose={() => setTradeOpen(false)} defaultSymbol={symbol} />
+      <ShareStockModal key={symbol} open={shareOpen} onClose={() => setShareOpen(false)} onShare={shareToGeneral} initialSymbol={symbol} />
+    </div>
+  );
+}
