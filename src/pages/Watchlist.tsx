@@ -8,9 +8,9 @@ import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { Badge, type Tone } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { EmptyState, SkeletonRows } from '@/components/ui/States';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { DataSourceBadge, MarketUnavailable, TradingViewBadge } from '@/components/ui/DataSource';
 import { ConfirmButton } from '@/components/ui/ConfirmButton';
-import { Sparkline } from '@/components/charts/Sparkline';
+import { WatchlistQuotes } from '@/features/watchlist/WatchlistQuotes';
 import { SymbolSearch } from '@/features/market/SymbolSearch';
 import {
   addToWatchlist,
@@ -21,7 +21,7 @@ import {
   updateWatchItem,
   useMyWatchlist,
 } from '@/features/watchlist/api';
-import { useCandles, useQuotes } from '@/hooks/useMarket';
+import { useQuotes } from '@/hooks/useMarket';
 import { marketData } from '@/services/market';
 import { RISK_LEVELS, WATCH_CATEGORIES, WATCH_DIRECTIONS, type RiskLevel, type WatchCategory, type WatchDirection, type WatchlistItem } from '@/types/db';
 import type { Quote } from '@/types/market';
@@ -45,10 +45,6 @@ function CatalystBadge({ date }: { date: string | null }) {
   );
 }
 
-function RowSpark({ symbol }: { symbol: string }) {
-  const { data } = useCandles(symbol, '1M');
-  return <Sparkline values={(data?.candles ?? []).map((c) => c.close)} width={72} height={22} />;
-}
 
 function ItemEditor({ item, onClose }: { item: WatchlistItem | null; onClose: () => void }) {
   const [draft, setDraft] = useState<WatchlistItem | null>(item);
@@ -157,10 +153,10 @@ export default function WatchlistPage() {
     return [...out].sort(sorters[sort]);
   }, [items.rows, filter, cat, dir, sort, quotes.data]);
 
-  const add = async (symbol: string, company?: string) => {
+  const add = async (symbol: string, company?: string | null) => {
     if (!active) return;
     if (items.rows.some((i) => i.symbol === symbol)) return toast.info(`$${symbol} is already on ${active.name}`);
-    const row = await attempt(() => addToWatchlist(active.id, symbol, { company: company && company !== 'Open ticker directly' ? company : undefined, sort_order: items.rows.length }), 'Could not add ticker');
+    const row = await attempt(() => addToWatchlist(active.id, symbol, { company: company || undefined, sort_order: items.rows.length }), 'Could not add ticker');
     if (row) {
       items.mutate((r) => (r.some((x) => x.id === row.id) ? r : [...r, row]));
       toast.success(`Added $${symbol}`);
@@ -186,7 +182,8 @@ export default function WatchlistPage() {
     setListModal(null);
   };
 
-  const freshness = marketData().freshness;
+  const quoteSupport = marketData().capabilities.quotes;
+  const firstQuote = quotes.data ? Object.values(quotes.data)[0] : undefined;
 
   return (
     <div>
@@ -234,7 +231,7 @@ export default function WatchlistPage() {
       <div className="space-y-3 px-3 sm:px-5">
         <GlassCard bodyClassName="p-3">
           <div className="grid gap-2 md:grid-cols-[1.4fr_1fr_auto_auto_auto]">
-            <SymbolSearch onSelect={(m) => void add(m.symbol, m.name)} placeholder="Add ticker ($MU, Micron…) and press Enter" />
+            <SymbolSearch onSelect={(m) => void add(m.ticker, m.name)} placeholder="Add ticker ($MU, Micron…) and press Enter" />
             <div className="relative">
               <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <Input className="pl-9" placeholder="Filter list…" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -256,10 +253,16 @@ export default function WatchlistPage() {
           </div>
         </GlassCard>
 
+        {items.rows.length > 0 && (
+          <GlassCard title="Prices" icon={<Star />} badge={<TradingViewBadge />} bodyClassName="p-0" collapseId="wl-tv-quotes">
+            <WatchlistQuotes title={active?.name ?? 'Watchlist'} tickers={rows.map((r) => r.symbol)} heightClass="h-[320px]" />
+          </GlassCard>
+        )}
+
         <GlassCard
           title={active ? `${active.name} · ${items.rows.length} tickers` : 'Watchlist'}
           icon={<Star />}
-          badge={<FreshnessBadge freshness={freshness} />}
+          badge={firstQuote ? <DataSourceBadge provenance={firstQuote.provenance} /> : <span className="hidden text-[10px] text-slate-500 sm:inline">Your data · prices in the TradingView panel above</span>}
           bodyClassName="p-0"
         >
           {items.loading || lists.loading ? (
@@ -277,7 +280,7 @@ export default function WatchlistPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-white/5 text-left">
-                      {['', 'Ticker', 'Price', 'Day', '1M', 'Side', 'Category', 'Risk', 'Catalyst', 'Thesis / notes', ''].map((h, i) => (
+                      {['', 'Ticker', ...(quoteSupport ? [`Price (${marketData().sourceLabel})`, 'Day'] : []), 'Side', 'Category', 'Risk', 'Catalyst', 'Thesis / notes', ''].map((h, i) => (
                         <th key={i} className="label px-3 py-2.5 font-medium">
                           {h}
                         </th>
@@ -286,7 +289,7 @@ export default function WatchlistPage() {
                   </thead>
                   <tbody>
                     {rows.map((i) => (
-                      <WatchRow key={i.id} item={i} quote={quotes.data?.[i.symbol]} onFav={() => toggleFav(i)} onEdit={() => setEditing(i)} onRemove={() => remove(i)} />
+                      <WatchRow key={i.id} item={i} showQuotes={quoteSupport} quote={quotes.data?.[i.symbol]} onFav={() => toggleFav(i)} onEdit={() => setEditing(i)} onRemove={() => remove(i)} />
                     ))}
                   </tbody>
                 </table>
@@ -310,10 +313,12 @@ export default function WatchlistPage() {
                           {i.category} · {i.risk_level} risk
                         </div>
                       </Link>
-                      <div className="text-right font-mono text-xs">
-                        <div className="text-slate-200">{fmtPrice(q?.price)}</div>
-                        <div className={trendClass(q?.changePercent)}>{fmtPct(q?.changePercent)}</div>
-                      </div>
+                      {quoteSupport && (
+                        <div className="text-right font-mono text-xs">
+                          <div className="text-slate-200">{q ? fmtPrice(q.price) : '—'}</div>
+                          <div className={trendClass(q?.changePercent)}>{q ? fmtPct(q.changePercent) : ''}</div>
+                        </div>
+                      )}
                       <IconButton label="Edit" onClick={() => setEditing(i)}>
                         <Edit3 className="h-4 w-4" />
                       </IconButton>
@@ -346,7 +351,7 @@ export default function WatchlistPage() {
   );
 }
 
-function WatchRow({ item: i, quote: q, onFav, onEdit, onRemove }: { item: WatchlistItem; quote?: Quote; onFav: () => void; onEdit: () => void; onRemove: () => void }) {
+function WatchRow({ item: i, quote: q, showQuotes, onFav, onEdit, onRemove }: { item: WatchlistItem; quote?: Quote; showQuotes: boolean; onFav: () => void; onEdit: () => void; onRemove: () => void }) {
   return (
     <tr className="group border-b border-white/[0.03] transition hover:bg-white/[0.02]">
       <td className="w-8 px-3 py-2.5">
@@ -360,11 +365,12 @@ function WatchRow({ item: i, quote: q, onFav, onEdit, onRemove }: { item: Watchl
           <span className="block max-w-[180px] truncate text-[11px] text-slate-500">{i.company ?? ''}</span>
         </Link>
       </td>
-      <td className="num px-3 py-2.5 text-slate-200">{fmtPrice(q?.price)}</td>
-      <td className={cn('num px-3 py-2.5', trendClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
-      <td className="px-3 py-2.5">
-        <RowSpark symbol={i.symbol} />
-      </td>
+      {showQuotes && (
+        <>
+          <td className="num px-3 py-2.5 text-slate-200">{q ? fmtPrice(q.price) : <MarketUnavailable compact />}</td>
+          <td className={cn('num px-3 py-2.5', trendClass(q?.changePercent))}>{q ? fmtPct(q.changePercent) : <MarketUnavailable compact />}</td>
+        </>
+      )}
       <td className="px-3 py-2.5">
         <Badge tone={DIR_TONE[i.direction]}>{i.direction}</Badge>
       </td>

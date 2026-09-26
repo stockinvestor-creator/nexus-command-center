@@ -4,7 +4,7 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { Badge } from '@/components/ui/Badge';
 import { TickerChip } from '@/components/ui/TickerChip';
 import { EmptyState, SkeletonRows } from '@/components/ui/States';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { DataSourceBadge, MarketUnavailable } from '@/components/ui/DataSource';
 import { ClickRow } from '@/components/ui/ClickRow';
 import { useLiveTable } from '@/hooks/useLiveTable';
 import { useQuotes } from '@/hooks/useMarket';
@@ -56,6 +56,8 @@ export function PortfolioTracker({ className }: { className?: string }) {
   const closed = rows.filter((t) => ['won', 'lost', 'closed'].includes(t.status));
   const quotes = useQuotes(entered.map((t) => t.symbol));
   const positions = entered.map((t) => ({ t, pnl: tradePnl(t, quotes.data?.[t.symbol]?.price) }));
+  const firstQuote = quotes.data ? Object.values(quotes.data)[0] : undefined;
+  const quoteSupport = marketData().capabilities.quotes;
   const openDollars = positions.reduce((s, p) => s + (p.pnl?.dollars ?? 0), 0);
   const realized = closed.map((t) => tradePnl(t, null)).filter(Boolean);
   const wins = closed.filter((t) => t.status === 'won').length;
@@ -64,14 +66,14 @@ export function PortfolioTracker({ className }: { className?: string }) {
   const realizedDollars = realized.reduce((s, p) => s + (p?.dollars ?? 0), 0);
 
   return (
-    <GlassCard collapseId="portfolio" className={className} title="Trade Tracker" icon={<Briefcase />} badge={<FreshnessBadge freshness={marketData().freshness} />}>
+    <GlassCard collapseId="portfolio" className={className} title="Trade Tracker" icon={<Briefcase />} badge={firstQuote && <DataSourceBadge provenance={firstQuote.provenance} />}>
       {loading ? (
         <SkeletonRows rows={4} />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { l: 'Open P&L', v: entered.length ? `${openDollars >= 0 ? '+' : ''}${fmtPrice(openDollars)}` : '—', c: trendClass(openDollars) },
+              { l: 'Open P&L', v: entered.length && quoteSupport && firstQuote ? `${openDollars >= 0 ? '+' : ''}${fmtPrice(openDollars)}` : '—', c: trendClass(openDollars) },
               { l: 'Realized', v: realized.length ? `${realizedDollars >= 0 ? '+' : ''}${fmtPrice(realizedDollars)}` : '—', c: trendClass(realizedDollars) },
               { l: 'Win rate', v: winRate == null ? '—' : `${winRate.toFixed(0)}%`, c: 'text-slate-100' },
             ].map((x) => (
@@ -93,14 +95,17 @@ export function PortfolioTracker({ className }: { className?: string }) {
                     <span className="text-slate-500">
                       {t.position_size ?? '?'}sh @ {fmtPrice(t.entry)}
                     </span>
-                    <span className={cn('ml-auto', trendClass(pnl?.pct))}>{pnl ? fmtPct(pnl.pct) : 'need entry'}</span>
+                    <span className={cn('ml-auto', trendClass(pnl?.pct))}>{pnl ? fmtPct(pnl.pct) : t.entry == null ? 'need entry' : <MarketUnavailable compact />}</span>
                   </ClickRow>
                 </li>
               ))}
             </ul>
           )}
+          {!quoteSupport && entered.length > 0 && (
+            <MarketUnavailable className="mt-3" reason="unsupported" message="Open P&L needs a quote provider inside NEXUS (TradingView widgets don't expose prices). Realized P&L uses your exit prices." />
+          )}
           <p className="mt-3 text-[10px] text-slate-600">
-            Paper tracking from shared ideas using the latest available price. Wins {wins} · Losses {losses} · Closed {closed.length}.
+            Paper tracking from shared ideas. Realized P&amp;L comes from your recorded exit prices. Wins {wins} · Losses {losses} · Closed {closed.length}.
           </p>
         </>
       )}

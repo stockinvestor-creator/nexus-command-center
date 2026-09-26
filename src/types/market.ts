@@ -1,8 +1,48 @@
-/** How fresh a piece of market data is. Shown next to every market-data component. */
-export type DataFreshness = 'LIVE' | 'DELAYED' | 'EOD' | 'DEMO';
+/**
+ * Market-data types.
+ *
+ * RULE: NEXUS never displays invented market data. Every market value shown by NEXUS
+ * (outside an embedded TradingView widget) carries a Provenance: where it came from,
+ * how fresh it is, and when it was last updated.
+ */
+
+/** Freshness that the configured provider can actually guarantee. */
+export type DataStatus =
+  /** Realtime quotes from the IEX exchange only (e.g. Alpaca Basic). NOT the consolidated market. */
+  | 'REALTIME_IEX'
+  /** Consolidated realtime (paid entitlements only). */
+  | 'REALTIME'
+  /** Delayed (typically 15+ minutes). */
+  | 'DELAYED'
+  /** End-of-day / previous close. */
+  | 'END_OF_DAY';
+
+export interface Provenance {
+  /** Human-readable source, e.g. "Alpha Vantage" */
+  source: string;
+  status: DataStatus;
+  /** Epoch ms of the underlying data point, when known */
+  updatedAt: number | null;
+  /** True when served from cache because the provider failed or hit its limit */
+  stale?: boolean;
+  note?: string;
+}
 
 export type Timeframe = '1D' | '5D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y';
 export const TIMEFRAMES: Timeframe[] = ['1D', '5D', '1M', '3M', '6M', 'YTD', '1Y', '5Y'];
+
+export type Exchange = 'NASDAQ' | 'NYSE' | 'AMEX';
+
+/** A symbol as NEXUS understands it. `tvSymbol` is what TradingView widgets receive. */
+export interface ResolvedSymbol {
+  ticker: string;
+  exchange: Exchange | null;
+  /** "NASDAQ:NVDA" when the exchange is known, otherwise the bare ticker (TradingView resolves it) */
+  tvSymbol: string;
+  name?: string;
+  /** True when the exchange is known from the directory or typed explicitly by the user */
+  verified: boolean;
+}
 
 export interface SymbolMatch {
   symbol: string;
@@ -22,9 +62,7 @@ export interface Quote {
   low?: number;
   previousClose?: number;
   volume?: number;
-  /** Epoch ms of the underlying data point (not the fetch time) */
-  asOf: number;
-  freshness: DataFreshness;
+  provenance: Provenance;
 }
 
 export interface Candle {
@@ -37,14 +75,12 @@ export interface Candle {
   volume: number;
 }
 
-export interface CandleSeries {
+export interface BarSeries {
   symbol: string;
   timeframe: Timeframe;
-  candles: Candle[];
+  bars: Candle[];
   intraday: boolean;
-  freshness: DataFreshness;
-  /** Human-readable caveat, e.g. when a timeframe fell back to daily bars */
-  note?: string;
+  provenance: Provenance;
 }
 
 export interface CompanyProfile {
@@ -60,7 +96,7 @@ export interface CompanyProfile {
   week52Low?: number;
   sharesOutstanding?: number;
   website?: string;
-  freshness: DataFreshness;
+  provenance: Provenance;
 }
 
 export interface Mover {
@@ -71,12 +107,18 @@ export interface Mover {
   volume: number;
 }
 
-export interface MarketMovers {
-  gainers: Mover[];
-  losers: Mover[];
-  mostActive: Mover[];
-  asOf: number;
-  freshness: DataFreshness;
+export interface MoverList {
+  items: Mover[];
+  provenance: Provenance;
 }
 
 export type MarketSession = 'pre' | 'open' | 'after' | 'closed';
+
+export interface MarketStatusInfo {
+  session: MarketSession;
+  /** Always schedule-based: computed from the published NYSE calendar, not from a data feed */
+  source: 'NYSE calendar';
+  checkedAt: number;
+}
+
+export type Capability = 'quotes' | 'bars' | 'movers' | 'search' | 'profile';

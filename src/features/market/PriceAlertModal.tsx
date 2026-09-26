@@ -9,6 +9,7 @@ import { useLiveTable } from '@/hooks/useLiveTable';
 import { fmtPrice, parseNum, timeAgo } from '@/lib/format';
 import { attempt, toast } from '@/store/toastStore';
 import { marketData } from '@/services/market';
+import { MarketUnavailable, STATUS_LABEL } from '@/components/ui/DataSource';
 import { createPriceAlert, deletePriceAlert, rearmPriceAlert } from './api';
 
 export function usePriceAlerts(symbol: string) {
@@ -24,6 +25,8 @@ export function PriceAlertModal({ symbol, open, onClose, lastPrice }: { symbol: 
   const [condition, setCondition] = useState<'above' | 'below'>('above');
   const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
+  const provider = marketData();
+  const canCheck = provider.capabilities.quotes;
 
   useEffect(() => {
     if (open && lastPrice) setPrice((lastPrice * (condition === 'above' ? 1.05 : 0.95)).toFixed(2));
@@ -44,18 +47,26 @@ export function PriceAlertModal({ symbol, open, onClose, lastPrice }: { symbol: 
 
   return (
     <Modal open={open} onClose={onClose} title={`Price alerts · ${symbol}`} size="sm">
-      <p className="mb-4 text-xs text-slate-400">
-        Alerts are checked in your browser against the latest <b>available</b> price from {marketData().name} ({marketData().freshness}). With end-of-day data, alerts can only trigger after the close.
-      </p>
+      {!canCheck ? (
+        <MarketUnavailable
+          className="mb-4"
+          reason="unsupported"
+          message="Price alerts need a quote provider inside NEXUS. TradingView widgets can't feed alerts (their data stays inside the widget). Configure a quote provider such as Alpha Vantage to enable alerts."
+        />
+      ) : (
+        <p className="mb-4 text-xs text-slate-400">
+          Checked in your browser against the latest price from {provider.sourceLabel} ({provider.status ? STATUS_LABEL[provider.status] : 'n/a'}). With end-of-day data an alert can only trigger after the close.
+        </p>
+      )}
       <div className="grid grid-cols-[1fr_1.2fr] gap-3">
         <Field label="Condition">
           <Select value={condition} onChange={setCondition} options={[{ value: 'above', label: 'Crosses above' }, { value: 'below', label: 'Crosses below' }]} />
         </Field>
         <Field label="Price" hint={lastPrice ? `Last: ${fmtPrice(lastPrice)}` : undefined}>
-          <Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
+          <Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && canCheck && save()} disabled={!canCheck} />
         </Field>
       </div>
-      <Button className="mt-4 w-full" variant="primary" loading={saving} onClick={save} icon={<BellRing className="h-4 w-4" />}>
+      <Button className="mt-4 w-full" variant="primary" loading={saving} onClick={save} disabled={!canCheck} icon={<BellRing className="h-4 w-4" />}>
         Create alert
       </Button>
       <div className="mt-6">

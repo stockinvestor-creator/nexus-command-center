@@ -13,12 +13,13 @@ import { TickerChip } from '@/components/ui/TickerChip';
 import { ConfirmButton } from '@/components/ui/ConfirmButton';
 import { EmptyState, SkeletonRows } from '@/components/ui/States';
 import { MessageContent } from '@/features/chat/MessageContent';
+import { UserEstimateTag } from '@/components/ui/DataSource';
 import { SymbolSearch } from '@/features/market/SymbolSearch';
 import { BIAS_META, CAT_STATUS_META, createCatalyst, deleteCatalyst, IMPACT_META, updateCatalyst, type CatalystDraft } from '@/features/catalysts/api';
 import { useLiveTable } from '@/hooks/useLiveTable';
 import { useAuth } from '@/store/authStore';
 import { attempt, toast } from '@/store/toastStore';
-import { lookupUniverse } from '@/services/market/universe';
+import { lookupSymbol } from '@/services/market/symbols';
 import {
   CATALYST_STATUSES,
   CATALYST_TYPES,
@@ -107,7 +108,7 @@ function CatalystForm({ open, onClose, editing }: { open: boolean; onClose: () =
     if (d.source_url && !/^https?:\/\//i.test(d.source_url)) return toast.warning('Source URL must start with http(s)://');
     const payload: CatalystDraft = {
       symbol,
-      company: d.company.trim() || lookupUniverse(symbol)?.name || null,
+      company: d.company.trim() || lookupSymbol(symbol)?.name || null,
       catalyst_type: d.catalyst_type,
       headline: d.headline.trim(),
       source_url: d.source_url.trim() || null,
@@ -158,8 +159,8 @@ function CatalystForm({ open, onClose, editing }: { open: boolean; onClose: () =
           ) : (
             <SymbolSearch
               onSelect={(m) => {
-                set('symbol', m.symbol);
-                if (!d.company && m.name !== 'Open ticker directly') set('company', m.name);
+                set('symbol', m.ticker);
+                if (!d.company && m.name) set('company', m.name);
               }}
             />
           )}
@@ -191,10 +192,10 @@ function CatalystForm({ open, onClose, editing }: { open: boolean; onClose: () =
         <Field label="Expected impact">
           <Select value={d.expected_impact} onChange={(v) => set('expected_impact', v)} options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} />
         </Field>
-        <Field label={`Confidence · ${d.confidence}%`}>
+        <Field label={`Confidence (user estimate) · ${d.confidence}%`}>
           <Slider value={d.confidence} onChange={(v) => set('confidence', v)} />
         </Field>
-        <Field label="Expected move %">
+        <Field label="Expected move % (user estimate)">
           <Input inputMode="decimal" value={d.expected_move} onChange={(e) => set('expected_move', e.target.value)} placeholder="e.g. 12" />
         </Field>
         <Field label="Notes" className="sm:col-span-2">
@@ -243,14 +244,14 @@ function CatalystCard({ c, focused, onEdit }: { c: Catalyst; focused: boolean; o
           {d != null && <div className={cn('text-[10px]', d < 0 ? 'text-slate-500' : d <= 3 ? 'text-rose-300' : 'text-amber-300')}>{d < 0 ? `${-d}d ago` : d === 0 ? 'today' : `in ${d}d`}</div>}
         </div>
         <div className="rounded-lg border border-white/5 bg-black/20 px-2 py-1.5">
-          <div className="text-[9px] uppercase tracking-wider text-slate-500">Confidence</div>
+          <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-slate-500">Confidence <UserEstimateTag label="est" /></div>
           <div className="text-slate-200">{c.confidence}%</div>
           <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/5">
             <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" style={{ width: `${c.confidence}%` }} />
           </div>
         </div>
         <div className="rounded-lg border border-white/5 bg-black/20 px-2 py-1.5">
-          <div className="text-[9px] uppercase tracking-wider text-slate-500">Exp. move</div>
+          <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-slate-500">Exp. move <UserEstimateTag label="est" /></div>
           <div className="text-slate-200">{c.expected_move != null ? `±${c.expected_move}%` : '—'}</div>
           <Badge tone={IMPACT_META[c.expected_impact].tone} className="mt-0.5 !px-1 !text-[8px]">
             {IMPACT_META[c.expected_impact].label}

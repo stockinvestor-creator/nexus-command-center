@@ -42,8 +42,8 @@ function TradeCardInner({ trade, reactions, commentCount, onOpen }: { trade: Tra
         {[
           ['Entry', fmtPrice(trade.entry)],
           ['Target', fmtPrice(trade.target)],
-          ['Exp.', trade.expected_move != null ? `±${trade.expected_move}%` : '—'],
-          ['Prob.', trade.probability != null ? `${trade.probability}%` : '—'],
+          ['Exp. (est)', trade.expected_move != null ? `±${trade.expected_move}%` : '—'],
+          ['Prob. (est)', trade.probability != null ? `${trade.probability}%` : '—'],
         ].map(([l, v]) => (
           <div key={l} className="rounded-lg border border-white/5 bg-black/20 px-2 py-1.5">
             <div className="text-[9px] uppercase tracking-wider text-slate-500">{l}</div>
@@ -52,10 +52,12 @@ function TradeCardInner({ trade, reactions, commentCount, onOpen }: { trade: Tra
         ))}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-        <span className="font-mono">
-          Now {fmtPrice(q?.price)}
-          {pnl && <span className={cn('ml-1.5', trendClass(pnl.pct))}>{fmtPct(pnl.pct)}{pnl.realized ? ' (realized)' : ''}</span>}
-        </span>
+        {(q || pnl?.realized) && (
+          <span className="font-mono" title={q ? `${q.provenance.source} · ${q.provenance.status}` : 'From your recorded exit price'}>
+            {q && !pnl?.realized && <>Last {fmtPrice(q.price)} </>}
+            {pnl && <span className={cn('ml-1', trendClass(pnl.pct))}>{fmtPct(pnl.pct)}{pnl.realized ? ' realized' : ''}</span>}
+          </span>
+        )}
         {trade.catalyst_date && (
           <span className="inline-flex items-center gap-1">
             <CalendarClock className="h-3 w-3" />

@@ -131,7 +131,7 @@ export function TradeForm({ open, onClose, trade, defaultSymbol }: { open: boole
               </button>
             </div>
           ) : (
-            <SymbolSearch onSelect={(m) => set('symbol', m.symbol)} placeholder="Search ticker…" />
+            <SymbolSearch onSelect={(m) => set('symbol', m.ticker)} placeholder="Search ticker…" />
           )}
         </Field>
         <div className="grid grid-cols-2 gap-3">
@@ -155,14 +155,14 @@ export function TradeForm({ open, onClose, trade, defaultSymbol }: { open: boole
           <Field label="Position size (shares)">
             <Input inputMode="decimal" value={f.position_size} onChange={(e) => set('position_size', e.target.value)} placeholder="100" />
           </Field>
-          <Field label="Expected move %">
+          <Field label="Expected move % (user estimate)">
             <Input inputMode="decimal" value={f.expected_move} onChange={(e) => set('expected_move', e.target.value)} placeholder="8" />
           </Field>
           <Field label="Catalyst date">
             <Input type="date" value={f.catalyst_date} onChange={(e) => set('catalyst_date', e.target.value)} />
           </Field>
         </div>
-        <Field label={`Probability · ${f.probability}%`}>
+        <Field label={`Probability (user estimate) · ${f.probability}%`}>
           <Slider value={f.probability} onChange={(v) => set('probability', v)} />
         </Field>
         <Field label="Time horizon">

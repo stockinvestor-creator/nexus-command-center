@@ -5,6 +5,7 @@ import { backend } from '@/services/backend';
 import { marketData } from '@/services/market';
 import { notifyUsers } from '@/features/notifications/api';
 import { fmtPrice } from '@/lib/format';
+import { STATUS_LABEL } from '@/components/ui/DataSource';
 
 /**
  * Client-side price alerts: checks active alerts against the latest AVAILABLE quote.
@@ -19,6 +20,8 @@ export function usePriceAlertWatcher() {
   useEffect(() => {
     if (!uid) return;
     const provider = marketData();
+    // Alerts need a real quote source inside NEXUS; without one they simply don't run.
+    if (!provider.capabilities.quotes) return;
     const interval = provider.refreshIntervalMs ? Math.max(provider.refreshIntervalMs, 30_000) : 15 * 60_000;
     let busy = false;
     const check = async () => {
@@ -42,7 +45,7 @@ export function usePriceAlertWatcher() {
               {
                 type: 'price_alert',
                 title: `$${sym} is ${a.condition} ${fmtPrice(a.price)}`,
-                body: `Latest available price: ${fmtPrice(price)} (${provider.freshness})`,
+                body: `Latest price ${fmtPrice(price)} · ${provider.sourceLabel}${provider.status ? ` (${STATUS_LABEL[provider.status]})` : ''}`,
                 link: `/stock/${sym}`,
               },
               true,

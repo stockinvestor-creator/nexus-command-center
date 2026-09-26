@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { safeStorage } from '@/lib/safeStorage';
 
-export type WidgetKey = 'tickerTape' | 'heatmap' | 'marketOverview' | 'symbolInfo' | 'economicCalendar' | 'topStories' | 'advancedChart' | 'hotlists';
+export type WidgetKey = 'tickerTape' | 'heatmap' | 'marketOverview' | 'symbolInfo' | 'economicCalendar' | 'topStories' | 'advancedChart' | 'hotlists' | 'movers' | 'screener' | 'watchlistQuotes' | 'sharedCharts';
 
 export interface SettingsState {
   sidebarCollapsed: boolean;
@@ -11,7 +11,6 @@ export interface SettingsState {
   sounds: boolean;
   widgets: Record<WidgetKey, boolean>;
   collapsedCards: Record<string, boolean>;
-  dashboardSymbol: string;
   set: (patch: Partial<Omit<SettingsState, 'set' | 'toggleWidget' | 'toggleCard'>>) => void;
   toggleWidget: (k: WidgetKey) => void;
   toggleCard: (id: string) => void;
@@ -33,9 +32,12 @@ const defaults = {
     topStories: true,
     advancedChart: true,
     hotlists: true,
+    movers: true,
+    screener: true,
+    watchlistQuotes: true,
+    sharedCharts: true,
   } as Record<WidgetKey, boolean>,
   collapsedCards: {} as Record<string, boolean>,
-  dashboardSymbol: 'SPY',
 };
 
 type Persisted = typeof defaults;

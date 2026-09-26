@@ -7,10 +7,11 @@ import { Avatar } from '@/components/ui/Avatar';
 import { TickerChip } from '@/components/ui/TickerChip';
 import { Textarea } from '@/components/ui/Field';
 import { ConfirmButton } from '@/components/ui/ConfirmButton';
-import { Sparkline } from '@/components/charts/Sparkline';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { TradingViewWidget, tv } from '@/components/widgets/TradingViewWidget';
+import { tvSymbolFor } from '@/services/market/symbols';
+import { DataSourceBadge, TradingViewBadge } from '@/components/ui/DataSource';
 import { useLiveTable } from '@/hooks/useLiveTable';
-import { useCandles, useQuote } from '@/hooks/useMarket';
+import { useQuote } from '@/hooks/useMarket';
 import { useAuth } from '@/store/authStore';
 import { TRADE_STATUSES, type TradeIdea, type TradeReaction } from '@/types/db';
 import { cn } from '@/lib/cn';
@@ -26,7 +27,6 @@ export function TradeDetail({ trade, reactions, onClose, onEdit }: { trade: Trad
   const comments = useLiveTable(trade ? 'trade_comments' : null, { eq: { trade_id: trade?.id ?? '' }, order: { column: 'created_at' } });
   const events = useLiveTable(trade ? 'trade_events' : null, { eq: { trade_id: trade?.id ?? '' }, order: { column: 'created_at', ascending: false } });
   const { data: q } = useQuote(trade?.symbol);
-  const candles = useCandles(trade?.symbol, '3M');
   const [text, setText] = useState('');
   const [posting, setPosting] = useState(false);
   const [tab, setTab] = useState<'comments' | 'timeline'>('comments');
@@ -93,20 +93,22 @@ export function TradeDetail({ trade, reactions, onClose, onEdit }: { trade: Trad
           </div>
         </div>
 
-        <div className="glass flex items-center gap-4 p-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="label">Available price</span>
-              {q && <FreshnessBadge freshness={q.freshness} asOf={q.asOf} />}
-            </div>
-            <div className="num text-2xl font-semibold text-white">{fmtPrice(q?.price)}</div>
-            {pnl && (
-              <div className={cn('num text-sm', trendClass(pnl.pct))}>
-                {fmtPct(pnl.pct)} {pnl.dollars != null && `(${pnl.dollars >= 0 ? '+' : ''}${fmtPrice(pnl.dollars)})`} {pnl.realized ? 'realized' : 'unrealized'}
-              </div>
-            )}
+        <div className="glass overflow-hidden">
+          <div className="flex items-center gap-2 px-3 pt-2">
+            <span className="label">Price · {tvSymbolFor(trade.symbol)}</span>
+            <TradingViewBadge className="ml-auto" />
           </div>
-          <Sparkline className="ml-auto" values={(candles.data?.candles ?? []).map((c) => c.close)} width={160} height={52} />
+          <div className="h-[190px]">
+            <TradingViewWidget key={trade.symbol} script="mini-symbol-overview" config={tv.miniSymbol(tvSymbolFor(trade.symbol))} failureText="Market data temporarily unavailable" />
+          </div>
+          {pnl && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-white/5 px-3 py-2">
+              <span className={cn('num text-sm', trendClass(pnl.pct))}>
+                {fmtPct(pnl.pct)} {pnl.dollars != null && `(${pnl.dollars >= 0 ? '+' : ''}${fmtPrice(pnl.dollars)})`} {pnl.realized ? 'realized (your exit price)' : 'unrealized'}
+              </span>
+              {q && !pnl.realized && <DataSourceBadge provenance={q.provenance} />}
+            </div>
+          )}
         </div>
 
         <div>
@@ -133,8 +135,8 @@ export function TradeDetail({ trade, reactions, onClose, onEdit }: { trade: Trad
             ['Target', fmtPrice(trade.target)],
             ['Stop', fmtPrice(trade.stop)],
             ['Size (sh)', trade.position_size ?? '—'],
-            ['Expected move', trade.expected_move != null ? `±${trade.expected_move}%` : '—'],
-            ['Probability', trade.probability != null ? `${trade.probability}%` : '—'],
+            ['Expected move (user est.)', trade.expected_move != null ? `±${trade.expected_move}%` : '—'],
+            ['Probability (user est.)', trade.probability != null ? `${trade.probability}%` : '—'],
             ['Catalyst date', fmtDate(trade.catalyst_date)],
             ['Horizon', trade.time_horizon ?? '—'],
             ['Exit', fmtPrice(trade.exit_price)],
@@ -148,7 +150,7 @@ export function TradeDetail({ trade, reactions, onClose, onEdit }: { trade: Trad
 
         {[
           ['Catalyst', trade.catalyst],
-          ['Thesis', trade.thesis],
+          ['Team thesis', trade.thesis],
           ['Downside scenario', trade.downside],
         ].map(([l, v]) =>
           v ? (

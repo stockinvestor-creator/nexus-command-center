@@ -95,23 +95,23 @@ const STEPS = [
           <b>Project Settings → API</b> (or <b>Data API</b>). Copy the <b>Project URL</b> and the <b>anon / public</b> key. The anon key is designed to be public — Row Level
           Security protects the data. Never use the <code>service_role</code> key in this app.
         </p>
-        <CopyBlock label=".env.local (local dev)" text={`VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi...\nVITE_MARKET_DATA_PROVIDER=mock`} />
+        <CopyBlock label=".env.local (local dev)" text={`VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi...\nVITE_MARKET_DATA_PROVIDER=tradingview`} />
       </>
     ),
   },
   {
     icon: LineChart,
-    title: 'Optional: free market-data API key',
+    title: 'Market data: TradingView (+ optional API)',
     body: (
       <>
         <p>
-          The app works out of the box with <b>DEMO</b> data. For real <b>end-of-day</b> US equity data, claim a free key at{' '}
-          <A href="https://www.alphavantage.co/support/#api-key">alphavantage.co</A> (25 requests/day; no card).
+          Market visuals work out of the box with official <b>TradingView</b> widgets (charts, ticker tape, movers, screener, heatmap) — set{' '}
+          <code className="text-cyan-200">VITE_MARKET_DATA_PROVIDER=tradingview</code>. NEXUS never generates prices.
         </p>
         <p className="mt-3">
-          Keep the key <b>server-side</b>: set <code className="text-cyan-200">MARKET_DATA_API_KEY</code> in Netlify (read only by the included Netlify Function) and set{' '}
-          <code className="text-cyan-200">VITE_MARKET_DATA_PROVIDER=alphavantage</code>. Leave <code>VITE_MARKET_DATA_API_KEY</code> empty in production — anything prefixed{' '}
-          <code>VITE_</code> ends up in the browser bundle.
+          Optional: for end-of-day quotes <i>inside</i> NEXUS (price alerts, trade P&amp;L) claim a free key at <A href="https://www.alphavantage.co/support/#api-key">alphavantage.co</A>, set{' '}
+          <code className="text-cyan-200">VITE_MARKET_DATA_PROVIDER=alphavantage</code> and put the key in <code className="text-cyan-200">MARKET_DATA_API_KEY</code> (server-side, no <code>VITE_</code>
+          prefix).
         </p>
       </>
     ),
@@ -127,7 +127,7 @@ const STEPS = [
         </p>
         <CopyBlock
           label="Netlify environment variables"
-          text={`VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi...\nVITE_MARKET_DATA_PROVIDER=mock        # or alphavantage\nMARKET_DATA_API_KEY=YOUR_FREE_KEY     # only if using alphavantage`}
+          text={`VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi...\nVITE_MARKET_DATA_PROVIDER=tradingview  # or alphavantage\nMARKET_DATA_API_KEY=YOUR_FREE_KEY     # only if using alphavantage`}
         />
         <p className="mt-3">
           Trigger a deploy. Netlify's Free plan gives 300 credits/month (a production deploy costs 15, so ~20 deploys/month); if credits run out the site pauses until next month — you are never billed. Finally, in Supabase <b>Authentication → URL Configuration</b>, set the Site URL to your Netlify URL (used by password-reset emails).
@@ -145,7 +145,7 @@ export default function SetupWizard() {
   const s = STEPS[step];
   const checks = [
     { ok: isSupabaseConfigured, label: 'Supabase URL + anon key detected' },
-    { ok: env.marketProvider !== 'mock', label: `Market provider: ${env.marketProvider}` },
+    { ok: ['tradingview', 'alphavantage'].includes(env.marketProvider), label: `Market provider: ${env.marketProvider}` },
   ];
   return (
     <div className="relative min-h-[100dvh] overflow-hidden">
@@ -209,7 +209,7 @@ export default function SetupWizard() {
               ) : (
                 <Link to="/login">
                   <Button variant="primary" icon={<Rocket className="h-4 w-4" />}>
-                    {isSupabaseConfigured ? 'Go to sign in' : 'Explore in Demo Mode'}
+                    {isSupabaseConfigured ? 'Go to sign in' : 'Explore in local mode'}
                   </Button>
                 </Link>
               )}

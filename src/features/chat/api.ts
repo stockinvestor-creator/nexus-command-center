@@ -64,7 +64,7 @@ export async function sendMessage(input: SendInput): Promise<Message> {
   const name = profile?.display_name ?? 'Someone';
   const where = input.channel.type === 'dm' ? 'a direct message' : `#${input.channel.name}`;
   const link = `/messages/${input.channel.id}`;
-  const preview = input.content.slice(0, 140) || (input.attachmentPath ? '📷 Image' : input.metadata?.stock ? `Shared $${input.metadata.stock.symbol}` : '');
+  const preview = input.content.slice(0, 140) || (input.attachmentPath ? '📷 Image' : input.metadata?.stock ? `Shared ${input.metadata.stock.symbol} chart` : '');
   const recipients = input.memberIds.filter((id) => id !== uid);
   const mentioned = mentions.filter((id) => id !== uid);
   if (mentioned.length) {

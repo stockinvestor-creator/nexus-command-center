@@ -37,7 +37,7 @@ export function CommandPalette() {
         placeholder="Ticker, company, or industry… (Enter to open)"
         onSelect={(m) => {
           setOpen(false);
-          navigate(`/stock/${encodeURIComponent(m.symbol)}`);
+          navigate(`/stock/${encodeURIComponent(m.tvSymbol)}`);
         }}
       />
       <p className="label mb-2 mt-5">Jump to</p>

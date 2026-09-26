@@ -118,7 +118,7 @@ function SidePanel({ mode, channel, onClose, onJump }: { mode: 'pins' | 'search'
                 <span className="ml-auto font-mono text-[10px] text-slate-600">{fmtDateTime(m.created_at)}</span>
               </div>
               <p className="mt-1 line-clamp-3 text-xs text-slate-400">
-                {m.kind === 'stock_share' && m.metadata.stock ? `📈 $${m.metadata.stock.symbol} ` : ''}
+                {m.kind === 'stock_share' && m.metadata.stock ? `📈 ${m.metadata.stock.symbol} ` : ''}
                 <MessageContent text={m.content} />
               </p>
             </button>

@@ -40,13 +40,21 @@ export interface ChannelMember {
 }
 
 export type MessageKind = 'text' | 'stock_share' | 'image' | 'system';
+/**
+ * Shared stock chart in chat. Stores ONLY what's needed to rebuild the official TradingView
+ * chart on the receiving side — never prices, OHLC, volume or chart points.
+ */
 export interface StockShareMeta {
+  /** TradingView symbol, e.g. "NASDAQ:NVDA" (older messages may hold a bare ticker) */
   symbol: string;
+  ticker?: string;
+  exchange?: string | null;
+  provider?: 'tradingview';
+  sharedChart?: boolean;
+  /** Default chart interval: "5", "15", "60", "D", "W" */
+  interval?: string;
+  /** Company name from the local reference directory (not market data) */
   company?: string;
-  price?: number;
-  changePercent?: number;
-  freshness?: string;
-  spark?: number[];
 }
 export interface MessageMetadata {
   stock?: StockShareMeta;

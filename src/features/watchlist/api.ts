@@ -3,7 +3,7 @@ import { backend } from '@/services/backend';
 import { useAuth } from '@/store/authStore';
 import { useLiveTable } from '@/hooks/useLiveTable';
 import { safeStorage } from '@/lib/safeStorage';
-import { lookupUniverse } from '@/services/market/universe';
+import { lookupSymbol } from '@/services/market/symbols';
 import type { Patch, Watchlist, WatchlistItem } from '@/types/db';
 import { toast } from '@/store/toastStore';
 
@@ -26,7 +26,7 @@ export async function addToWatchlist(watchlistId: string, symbol: string, extra:
     watchlist_id: watchlistId,
     owner_id: uid,
     symbol: sym,
-    company: extra.company ?? lookupUniverse(sym)?.name ?? null,
+    company: extra.company ?? lookupSymbol(sym)?.name ?? null,
     ...extra,
   });
 }

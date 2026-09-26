@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Field, Input, Select, Toggle } from '@/components/ui/Field';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { MarketUnavailable, STATUS_LABEL, TradingViewBadge } from '@/components/ui/DataSource';
 import { ConfirmButton } from '@/components/ui/ConfirmButton';
 import { useAuth } from '@/store/authStore';
 import { useSettings, type WidgetKey } from '@/store/settingsStore';
@@ -22,27 +22,35 @@ import { browserNotificationsSupported, notifyUsers, requestBrowserPermission } 
 import { env, isSupabaseConfigured } from '@/lib/env';
 import { fmtDateTime, timeAgo } from '@/lib/format';
 import { nextEodRefresh } from '@/lib/marketClock';
-import type { DataFreshness } from '@/types/market';
+import type { Capability } from '@/types/market';
 
 const COLORS = ['#22d3ee', '#a78bfa', '#34d399', '#f472b6', '#fbbf24', '#60a5fa', '#f87171', '#e879f9'];
 
 const WIDGETS: { key: WidgetKey; label: string; description: string }[] = [
-  { key: 'tickerTape', label: 'Ticker tape', description: 'Top-of-screen tape (off = use your provider data)' },
+  { key: 'tickerTape', label: 'Ticker tape', description: 'Top-of-screen TradingView tape' },
+  { key: 'movers', label: 'Market Movers', description: 'Top gainers / losers / most active (TradingView screener)' },
+  { key: 'screener', label: 'Market Screener', description: 'Markets page screener' },
+  { key: 'watchlistQuotes', label: 'Watchlist quotes', description: 'TradingView quotes for your watchlist' },
+  { key: 'sharedCharts', label: 'Charts in chat', description: 'Interactive TradingView charts in shared stock messages' },
   { key: 'marketOverview', label: 'Market overview', description: 'Indices, mega caps, macro' },
   { key: 'hotlists', label: 'Hot lists', description: 'TradingView movers' },
   { key: 'heatmap', label: 'Stock heatmap', description: 'S&P 500 by sector' },
   { key: 'economicCalendar', label: 'Economic calendar', description: 'US macro events' },
   { key: 'topStories', label: 'Top stories', description: 'TradingView news timeline' },
-  { key: 'advancedChart', label: 'Advanced chart', description: 'Full TradingView chart (Markets page)' },
+  { key: 'advancedChart', label: 'Markets chart', description: 'TradingView chart on the Markets page' },
   { key: 'symbolInfo', label: 'Symbol info', description: 'On stock pages' },
 ];
 
-const FRESHNESS_HELP: { f: DataFreshness; text: string }[] = [
-  { f: 'LIVE', text: 'Real-time. Not offered by any free US-equity API we use, so the custom components never show this unless you plug in a real-time provider.' },
-  { f: 'DELAYED', text: 'TradingView widgets. Depending on exchange licensing they are real-time or ~15 min delayed; we label them conservatively.' },
-  { f: 'EOD', text: 'End-of-day (last close). What the Alpha Vantage free tier provides for US stocks.' },
-  { f: 'DEMO', text: 'Synthetic data generated in your browser. For testing the UI only — never real prices.' },
+const LABEL_HELP: { label: string; text: string }[] = [
+  { label: 'TradingView market data', text: 'Shown on official TradingView widgets (charts, ticker tape, movers, screener, heatmap, quotes). The numbers are TradingView’s; depending on the exchange they may be delayed. NEXUS never copies or alters them.' },
+  { label: 'End of day', text: 'Previous-close data from an API provider such as the Alpha Vantage free tier. Shown with “Updated <date>”.' },
+  { label: 'Delayed', text: 'Typically 15+ minutes behind, from a provider that states so.' },
+  { label: 'Realtime · IEX only', text: 'Future Alpaca Basic support: realtime prints from the IEX exchange only — not the full consolidated US market.' },
+  { label: 'Market data unavailable', text: 'No verified source for that value. NEXUS shows this (or —) instead of ever filling in a number.' },
+  { label: 'User estimate / Manual score / Team thesis', text: 'Your own analysis (probabilities, expected moves, scores, theses). Never provider data.' },
 ];
+
+const CAP_LABEL: Record<Capability, string> = { quotes: 'Quotes', bars: 'Price bars', movers: 'Movers lists', search: 'Symbol search', profile: 'Company profile' };
 
 function ProfileCard() {
   const profile = useAuth((s) => s.profile);
@@ -135,18 +143,27 @@ function MarketDataStatus() {
     const id = window.setInterval(() => setStats(cacheStats()), 5000);
     return () => window.clearInterval(id);
   }, []);
-  const avMode = provider.id === 'alphavantage' ? (env.marketApiKey ? 'Direct key (dev only — key is visible in the browser)' : 'Netlify Function proxy (key stays server-side)') : null;
   const rows: [string, ReactNode][] = [
-    ['Provider', <span className="flex items-center gap-2">{provider.name} <FreshnessBadge freshness={provider.freshness} /></span>],
-    ['Data freshness', provider.freshness === 'DEMO' ? 'Synthetic demo data' : provider.freshness === 'EOD' ? 'End-of-day (previous close)' : provider.freshness],
-    ['API calls used today', st.dailyLimit != null ? `${st.callsToday} / ${st.dailyLimit}${st.limitReached ? ' — limit reached, serving cache' : ''}` : provider.usesNetwork ? String(st.callsToday) : 'n/a (local generator, no API calls)'],
-    ['Last successful update', st.lastSuccess ? `${fmtDateTime(st.lastSuccess)} (${timeAgo(st.lastSuccess)})` : provider.usesNetwork ? 'never' : 'continuous (local)'],
+    ['Provider', provider.name],
+    ['Source label', provider.sourceLabel],
+    ['Data status', provider.status ? STATUS_LABEL[provider.status] : 'None inside NEXUS (TradingView widgets display their own data)'],
+    [
+      'Capabilities',
+      <span className="flex flex-wrap gap-1">
+        {(Object.keys(CAP_LABEL) as Capability[]).map((c) => (
+          <span key={c} className={provider.capabilities[c] ? 'rounded bg-emerald-400/10 px-1.5 text-[11px] text-emerald-300' : 'rounded bg-white/5 px-1.5 text-[11px] text-slate-500 line-through'}>
+            {CAP_LABEL[c]}
+          </span>
+        ))}
+      </span>,
+    ],
+    ['API calls used today', st.dailyLimit != null ? `${st.callsToday} / ${st.dailyLimit}${st.limitReached ? ' — rate limit reached, serving cache' : ''}` : provider.usesNetwork ? String(st.callsToday) : 'n/a (no NEXUS-side API calls)'],
+    ['Last successful update', st.lastSuccess ? `${fmtDateTime(st.lastSuccess)} (${timeAgo(st.lastSuccess)})` : provider.usesNetwork ? 'never' : 'n/a'],
     ['Cache', `${stats.entries} entries · ${stats.fresh} fresh · ${(stats.bytes / 1024).toFixed(1)} KB`],
-    ['Cache hits / misses', `${st.cacheHits} / ${st.cacheMisses}${st.staleServed ? ` · ${st.staleServed} served stale` : ''}`],
-    ['Next EOD refresh', provider.freshness === 'EOD' ? fmtDateTime(nextEodRefresh()) : '—'],
-    ['Polling', provider.refreshIntervalMs ? `every ${provider.refreshIntervalMs / 1000}s while visible (local only)` : 'no polling — refreshed only when cache expires'],
+    ['Cache hits / misses', `${st.cacheHits} / ${st.cacheMisses}${st.staleServed ? ` · ${st.staleServed} served stale (timestamped)` : ''}`],
+    ['Next end-of-day refresh', provider.status === 'END_OF_DAY' ? fmtDateTime(nextEodRefresh()) : '—'],
+    ['Secrets', provider.usesNetwork ? 'Server-side only (Netlify Function)' : 'None required'],
   ];
-  if (avMode) rows.splice(1, 0, ['Transport', avMode]);
   return (
     <GlassCard title="Market Data Status" icon={<Server />}>
       <dl className="divide-y divide-white/[0.04] text-sm">
@@ -157,6 +174,7 @@ function MarketDataStatus() {
           </div>
         ))}
       </dl>
+      {provider.configurationError && <MarketUnavailable className="mt-3" reason="not_configured" message={provider.configurationError} />}
       {st.lastError && (
         <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           Last error{st.lastErrorAt ? ` (${timeAgo(st.lastErrorAt)})` : ''}: {st.lastError}
@@ -210,11 +228,12 @@ export default function Settings() {
         <ProfileCard />
         <MarketDataStatus />
 
-        <GlassCard title="Data freshness labels" icon={<Database />}>
-          <ul className="space-y-3">
-            {FRESHNESS_HELP.map((x) => (
-              <li key={x.f} className="flex gap-3">
-                <FreshnessBadge freshness={x.f} className="mt-0.5 shrink-0" />
+        <GlassCard title="Market data labels" icon={<Database />} badge={<TradingViewBadge className="hidden sm:inline-flex" />}>
+          <p className="mb-3 text-xs text-slate-400">Rule: real market data or no market data. NEXUS never generates, simulates or back-fills prices.</p>
+          <ul className="space-y-2.5">
+            {LABEL_HELP.map((x) => (
+              <li key={x.label} className="grid grid-cols-[150px_1fr] gap-3">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-300">{x.label}</span>
                 <span className="text-xs text-slate-400">{x.text}</span>
               </li>
             ))}
@@ -271,7 +290,7 @@ export default function Settings() {
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-slate-500">Backend</dt>
-              <dd className="text-slate-200">{isSupabaseConfigured ? 'Supabase (free tier)' : 'Demo Mode (this browser)'}</dd>
+              <dd className="text-slate-200">{isSupabaseConfigured ? 'Supabase (free tier)' : 'Local mode (this browser only, not synced)'}</dd>
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-slate-500">Realtime</dt>
@@ -297,7 +316,7 @@ export default function Settings() {
         </GlassCard>
 
         {isDemoMode && backend instanceof LocalBackend && (
-          <GlassCard title="Demo identity" icon={<FlaskConical />}>
+          <GlassCard title="Local mode identity" icon={<FlaskConical />}>
             <p className="text-xs text-slate-400">
               Switch who you are <b>in this tab</b>. Open a second tab as the other operator to test realtime chat, presence, typing indicators and notifications.
             </p>
@@ -308,13 +327,13 @@ export default function Settings() {
                 </Button>
               ))}
               <ConfirmButton
-                confirmLabel="Wipe demo data?"
+                confirmLabel="Wipe local data?"
                 onConfirm={() => {
                   LocalBackend.resetDemoData();
                   window.location.reload();
                 }}
               >
-                <Trash2 className="h-3.5 w-3.5" /> Reset demo data
+                <Trash2 className="h-3.5 w-3.5" /> Reset local data
               </ConfirmButton>
             </div>
           </GlassCard>

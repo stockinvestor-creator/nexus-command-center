@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/store/authStore';
-import { isSupabaseConfigured, SETUP_SEEN_KEY } from '@/lib/env';
+import { isPreviewBuild, isSupabaseConfigured, SETUP_SEEN_KEY } from '@/lib/env';
 import { safeStorage } from '@/lib/safeStorage';
 import { AppShell } from '@/components/layout/AppShell';
 import { RequireAuth, FullScreenLoader } from '@/features/auth/RequireAuth';
@@ -22,7 +22,7 @@ const NotFound = lazy(() => import('@/pages/NotFound'));
 
 /** Show the setup wizard on the very first visit when Supabase isn't configured yet. */
 function FirstRun({ children }: { children: ReactNode }) {
-  if (!isSupabaseConfigured && !safeStorage.get<boolean>(SETUP_SEEN_KEY, false)) return <Navigate to="/setup" replace />;
+  if (!isPreviewBuild && !isSupabaseConfigured && !safeStorage.get<boolean>(SETUP_SEEN_KEY, false)) return <Navigate to="/setup" replace />;
   return <>{children}</>;
 }
 

@@ -12,7 +12,7 @@ interface Usage {
 export interface MarketStatusState {
   providerId: string;
   providerName: string;
-  freshness: string;
+  status: string | null;
   dailyLimit: number | null;
   callsToday: number;
   cacheHits: number;
@@ -22,7 +22,7 @@ export interface MarketStatusState {
   lastError: string | null;
   lastErrorAt: number | null;
   limitReached: boolean;
-  init: (p: { id: string; name: string; freshness: string; dailyLimit: number | null }) => void;
+  init: (p: { id: string; name: string; status: string | null; dailyLimit: number | null }) => void;
   recordCall: () => void;
   recordHit: () => void;
   recordMiss: () => void;
@@ -39,9 +39,9 @@ const readUsage = (): Usage => {
 };
 
 export const useMarketStatus = create<MarketStatusState>((set, get) => ({
-  providerId: 'mock',
-  providerName: 'Demo',
-  freshness: 'DEMO',
+  providerId: 'tradingview',
+  providerName: 'TradingView widgets',
+  status: null,
   dailyLimit: null,
   callsToday: readUsage().calls,
   cacheHits: 0,
@@ -52,7 +52,7 @@ export const useMarketStatus = create<MarketStatusState>((set, get) => ({
   lastErrorAt: null,
   limitReached: false,
   init: (p) =>
-    set({ providerId: p.id, providerName: p.name, freshness: p.freshness, dailyLimit: p.dailyLimit, callsToday: readUsage().calls }),
+    set({ providerId: p.id, providerName: p.name, status: p.status, dailyLimit: p.dailyLimit, callsToday: readUsage().calls }),
   recordCall: () => {
     const u = readUsage();
     u.calls += 1;

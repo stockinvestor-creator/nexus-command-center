@@ -100,9 +100,12 @@ export class LocalBackend implements Backend {
     return seeded;
   }
 
+  private warned = false;
   private persist() {
-    if (!safeStorage.set(DB_KEY, this.db)) {
-      throw new Error('Demo storage is full. Clear demo data in Settings, or connect Supabase.');
+    // If browser storage is unavailable or full, keep working in memory for this session.
+    if (!safeStorage.set(DB_KEY, this.db) && !this.warned) {
+      this.warned = true;
+      console.warn('Demo data could not be saved to browser storage; changes will last until you close this tab.');
     }
   }
 

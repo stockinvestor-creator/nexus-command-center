@@ -1,42 +1,90 @@
 import { Link } from 'react-router-dom';
-import { CandlestickChart } from 'lucide-react';
+import { CornerUpLeft, ExternalLink, Maximize2, Star } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import type { StockShareMeta } from '@/types/db';
-import { useCandles, useQuote } from '@/hooks/useMarket';
-import { Sparkline } from '@/components/charts/Sparkline';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
-import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
-import { fmtPct, fmtPrice, trendClass } from '@/lib/format';
-import { lookupUniverse } from '@/services/market/universe';
+import { resolveSymbol } from '@/services/market/symbols';
+import { TradingViewChart } from '@/components/charts/TradingViewChart';
+import { TradingViewBadge } from '@/components/ui/DataSource';
+import { Modal } from '@/components/ui/Modal';
+import { TradingViewWidget, tv } from '@/components/widgets/TradingViewWidget';
+import { useWatchToggle } from '@/features/watchlist/api';
+import { useSettings } from '@/store/settingsStore';
+import { cn } from '@/lib/cn';
 
-/** Rich ticker card inside chat. Shows the CURRENT available price, plus the price at share time. */
-export function StockShareCard({ meta }: { meta: StockShareMeta }) {
-  const { data: q } = useQuote(meta.symbol);
-  const { data: c } = useCandles(meta.symbol, '1M');
-  const spark = c?.candles.map((x) => x.close) ?? meta.spark ?? [];
-  const company = meta.company ?? lookupUniverse(meta.symbol)?.name;
+/**
+ * Shared-chart message card. Rebuilt from message metadata on every load:
+ * TradingView symbol → official interactive TradingView chart (lazy, unloads offscreen).
+ * Legacy fields some old messages may still contain (price, sparkline…) are ignored.
+ */
+export function StockShareCard({ meta, sharedBy, onReply }: { meta: StockShareMeta; sharedBy?: string; onReply?: () => void }) {
+  const resolved = resolveSymbol(meta.symbol) ?? resolveSymbol(meta.ticker ?? '');
+  const tvSymbol = resolved?.tvSymbol ?? meta.symbol;
+  const ticker = meta.ticker ?? resolved?.ticker ?? meta.symbol;
+  const exchange = meta.exchange ?? resolved?.exchange ?? null;
+  const company = meta.company ?? resolved?.name;
+  const chartsOn = useSettings((s) => s.widgets.sharedCharts);
+  const { item, toggle } = useWatchToggle(ticker);
+  const [full, setFull] = useState(false);
+
   return (
-    <div className="glass glow-border mt-1.5 w-full max-w-sm overflow-hidden p-3">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
+    <div className="glass glow-border mt-1.5 w-full max-w-[640px] overflow-hidden" data-shared-chart={tvSymbol}>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1 px-3 pb-2 pt-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-bold text-white">${meta.symbol}</span>
-            {q && <FreshnessBadge freshness={q.freshness} asOf={q.asOf} />}
+            <span className="font-display text-lg font-bold tracking-wide text-white">${ticker}</span>
+            <span className={cn('rounded border px-1.5 py-[1px] font-mono text-[9px] uppercase tracking-wider', exchange ? 'border-cyan-400/30 text-cyan-200' : 'border-amber-400/30 text-amber-200')}>
+              {exchange ?? 'exchange unverified'}
+            </span>
           </div>
-          {company && <p className="truncate text-[11px] text-slate-500">{company}</p>}
+          {company && <p className="truncate text-[11px] text-slate-400">{company}</p>}
         </div>
-        <Sparkline values={spark} width={96} height={36} />
+        <TradingViewBadge className="ml-auto" />
       </div>
-      <div className="mt-2 flex items-baseline gap-2">
-        <AnimatedNumber value={q?.price ?? meta.price} format={fmtPrice} className="text-xl font-semibold text-white" />
-        <span className={`num text-xs ${trendClass(q?.changePercent ?? meta.changePercent)}`}>{fmtPct(q?.changePercent ?? meta.changePercent)} today</span>
+
+      <div className="h-[280px] border-y border-white/[0.05] sm:h-[340px]">
+        {chartsOn ? (
+          <TradingViewChart symbol={tvSymbol} interval={meta.interval ?? 'D'} compact unloadOffscreen expandable={false} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-xs text-slate-500">Shared charts are hidden in Settings.</div>
+        )}
       </div>
-      {meta.price != null && <p className="font-mono text-[10px] text-slate-500">At share: {fmtPrice(meta.price)} ({meta.freshness})</p>}
-      <Link
-        to={`/stock/${meta.symbol}`}
-        className="mt-2.5 flex items-center justify-center gap-1.5 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 py-1.5 text-xs font-medium text-neon-cyan transition hover:bg-neon-cyan/20"
-      >
-        <CandlestickChart className="h-3.5 w-3.5" /> Open full chart
-      </Link>
+
+      <div className="flex flex-wrap items-center gap-1 px-2 py-2">
+        {sharedBy && <span className="px-1 text-[11px] text-slate-500">Shared by {sharedBy}</span>}
+        <div className="ml-auto flex flex-wrap items-center gap-1">
+          <CardBtn onClick={() => setFull(true)} icon={<Maximize2 className="h-3.5 w-3.5" />}>
+            Full chart
+          </CardBtn>
+          <Link to={`/stock/${encodeURIComponent(tvSymbol)}`} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-slate-300 transition hover:bg-white/5 hover:text-neon-cyan">
+            <ExternalLink className="h-3.5 w-3.5" /> Stock page
+          </Link>
+          <CardBtn onClick={toggle} icon={<Star className={cn('h-3.5 w-3.5', item && 'fill-amber-300 text-amber-300')} />}>
+            {item ? 'Watching' : 'Watchlist'}
+          </CardBtn>
+          {onReply && (
+            <CardBtn onClick={onReply} icon={<CornerUpLeft className="h-3.5 w-3.5" />}>
+              Reply
+            </CardBtn>
+          )}
+        </div>
+      </div>
+
+      {full && (
+        <Modal open={full} onClose={() => setFull(false)} title={tvSymbol} size="xl">
+          <div className="-mx-5 -my-4 h-[78dvh]">
+            <TradingViewWidget script="advanced-chart" config={tv.advancedChart(tvSymbol, { interval: meta.interval ?? 'D' })} lazy={false} failureText="Chart temporarily unavailable" />
+          </div>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function CardBtn({ onClick, icon, children }: { onClick: () => void; icon: ReactNode; children: ReactNode }) {
+  return (
+    <button onClick={onClick} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-slate-300 transition hover:bg-white/5 hover:text-neon-cyan">
+      {icon}
+      {children}
+    </button>
   );
 }

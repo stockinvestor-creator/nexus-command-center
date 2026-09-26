@@ -67,7 +67,7 @@ export default function LoginPage() {
             <div className="space-y-4">
               <div className="rounded-xl border border-fuchsia-400/30 bg-fuchsia-400/10 p-3 text-xs text-fuchsia-100">
                 <p className="flex items-center gap-2 font-semibold">
-                  <FlaskConical className="h-4 w-4" /> Demo Mode
+                  <FlaskConical className="h-4 w-4" /> Local mode
                 </p>
                 <p className="mt-1 text-fuchsia-200/80">
                   Supabase isn&apos;t configured yet, so data is stored in this browser only. Open two tabs as different operators to test realtime chat.

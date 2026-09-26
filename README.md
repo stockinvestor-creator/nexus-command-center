@@ -4,12 +4,14 @@ A private, two-person, futuristic stock-market command center with realtime chat
 
 - **React 19 + Vite + TypeScript + Tailwind CSS**
 - **Framer Motion** for transitions, **Three.js / React Three Fiber** for a lazy-loaded ambient particle scene
-- **TradingView Lightweight Charts** for the fully custom chart (not an embed)
+- **Official TradingView widgets** for every market visual: charts, ticker tape, Market Movers, screener, heatmap, quotes, and interactive charts shared in chat
+- **TradingView Lightweight Charts** for an optional NEXUS chart drawn only from a real API provider's bars (e.g. Alpha Vantage)
 - **Supabase** for Auth, Postgres (with Row Level Security), Realtime (chat, presence, typing) and Storage (chat images)
-- **Free TradingView widgets** for ticker tape, heatmap, market overview, calendar, news, advanced chart
 - **Lucide** icons
 
-> Works immediately with **zero configuration** in Demo Mode (synthetic data, data stored in your browser, two-tab realtime simulation). Connect Supabase to turn it into the real private two-person workspace.
+> **Rule: real market data or no market data.** NEXUS never generates, simulates or back-fills prices. If a verified source isn't available, it shows *Market data unavailable* (or —).
+>
+> Without Supabase configured, the workspace (chat, watchlists, ideas) runs in a browser-only **local mode** for testing. Market data behaves exactly the same in both modes.
 
 ---
 
@@ -17,13 +19,13 @@ A private, two-person, futuristic stock-market command center with realtime chat
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173  → opens the first-run setup guide, then Demo Mode
+npm run dev        # http://localhost:5173  → first-run setup guide, then the app
 npm run build      # typecheck + production build into dist/
 ```
 
 Requires Node 20+ (Netlify is pinned to Node 22 in `netlify.toml`).
 
-**Try realtime in Demo Mode:** open the app in two tabs; in the second tab go to *Settings → Demo identity* and switch to *Operator B*. Chat, reactions, typing indicators, presence and notifications sync between the tabs.
+**Try realtime chat without Supabase (local mode):** open the app in two tabs; in the second tab go to *Settings → Local mode identity* and switch to *Operator B*. Chat, reactions, typing indicators, presence and notifications sync between the tabs.
 
 ---
 
@@ -53,10 +55,10 @@ Registration is locked three ways: no sign-up screen exists in the app, public s
 **Project Settings → API**: copy **Project URL** and the **anon public** key.
 The anon key is designed to be public; RLS protects the data. **Never** put the `service_role` key in this app.
 
-### Step 5 — (Optional) Free market-data key
-The app works with DEMO data out of the box. For **real end-of-day** US equity data:
-1. Get a free key at <https://www.alphavantage.co/support/#api-key> (25 requests/day, no card).
-2. You will add it to Netlify as `MARKET_DATA_API_KEY` (server-side only, see below).
+### Step 5 — Market data
+Set `VITE_MARKET_DATA_PROVIDER=tradingview` (the default). All market visuals are official TradingView widgets; nothing else is needed and it costs $0.
+
+Optional: for **end-of-day** quotes *inside* NEXUS (enables price alerts and open-trade P&L), get a free key at <https://www.alphavantage.co/support/#api-key>, set `VITE_MARKET_DATA_PROVIDER=alphavantage`, and add the key as `MARKET_DATA_API_KEY` (server-side only).
 
 ### Step 6 — Deploy on Netlify
 1. Push this folder to a GitHub repo.
@@ -68,9 +70,10 @@ The app works with DEMO data out of the box. For **real end-of-day** US equity d
    |---|---|---|
    | `VITE_SUPABASE_URL` | `https://xxxx.supabase.co` | public |
    | `VITE_SUPABASE_ANON_KEY` | `eyJ...` | public by design (RLS) |
-   | `VITE_MARKET_DATA_PROVIDER` | `mock` or `alphavantage` | |
+   | `VITE_MARKET_DATA_PROVIDER` | `tradingview` (or `alphavantage`) | public setting; `mock` is no longer valid |
    | `MARKET_DATA_API_KEY` | your Alpha Vantage key | **server-side only**; only if using `alphavantage` |
-   | `VITE_MARKET_DATA_API_KEY` | *(leave empty)* | dev-only escape hatch; anything `VITE_` is visible in the browser |
+
+   Never create `VITE_` variables for secrets — anything prefixed `VITE_` ends up in browser JavaScript.
 
 4. **Deploys → Trigger deploy**.
 5. Back in Supabase: **Authentication → URL Configuration** → set **Site URL** to your Netlify URL (used by password-reset emails).
@@ -79,48 +82,56 @@ Done. Sign in with either account.
 
 ---
 
-## 3. Data freshness — what is LIVE, DELAYED, EOD or DEMO
+## 3. Market data: sources and labels
 
-Every market-data component shows a freshness badge.
-
-| Badge | Where it appears | What it means |
+| What you see | Source | Label |
 |---|---|---|
-| **DEMO** | All custom components when `VITE_MARKET_DATA_PROVIDER=mock` | Synthetic data generated in the browser. Realistic-looking, deterministic, **never real prices**. |
-| **EOD** | All custom components when using Alpha Vantage free | End-of-day data (last close). Alpha Vantage's free tier does **not** include realtime or 15-min-delayed US equities (those are premium). |
-| **DELAYED** | TradingView widgets (ticker tape, heatmap, overview, calendar, news, advanced chart, symbol info) | TradingView's free widgets are real-time for some exchanges and delayed for others (exchange licensing). We label them DELAYED to stay conservative. Their data is displayed as-is — never scraped or fed into our own charts. |
-| **LIVE** | Not used by default | Reserved for a genuinely real-time provider if you add one (see §4). |
+| Ticker tape, Market Movers (Top gainers / losers / most active), Market Screener, U.S. heatmap, market overview, stock charts, symbol info, company profile, watchlist quotes, charts shared in chat | Official **TradingView** widgets. The data is TradingView's, rendered inside their iframe. NEXUS never reads, copies or alters it. | **TradingView market data**. Depending on the exchange this can be delayed; NEXUS never calls it realtime. |
+| Quotes / bars / movers drawn by NEXUS itself (only when an API provider is configured) | e.g. **Alpha Vantage** free tier via the Netlify Function | **SOURCE · STATUS · Updated …**, e.g. `ALPHA VANTAGE · END OF DAY · Updated Sep 25`. Cached data is marked `cached` with its timestamp. |
+| Market status (open / pre / after / closed) | Published NYSE hours and holidays (`src/lib/marketClock.ts`) | "Schedule-based" |
+| Probability, expected move, confidence, catalyst/momentum/volatility/risk scores, theses | You and your partner | **User estimate**, **Manual score**, **Team thesis** |
 
-Other honesty choices:
-- **Index cards** show the ETFs **SPY / QQQ / DIA** as clearly-labelled proxies for the S&P 500 / Nasdaq-100 / Dow (index levels themselves require paid licences).
-- **Market breadth & sentiment** are computed **only from symbols the app already tracks** (whole directory in Demo; index proxies + your watchlist with a real provider) and say so on the card. They are descriptive, not forecasts.
-- **Catalyst / Momentum / Volatility / Risk scores** on stock pages are **entered manually** by you and your partner. The app does not invent financial analysis.
-- **Price alerts** are evaluated in the browser against the latest *available* price, so with EOD data they can only trigger after the close.
+Failure behaviour (never a fallback to invented data):
+- TradingView can't load → *Chart temporarily unavailable* / *Market data temporarily unavailable* (the ticker and exchange stay visible).
+- Provider rate limit → *Market data rate limit reached*; previously cached data, if any, is shown **with its timestamp**.
+- Provider can't serve a capability (e.g. TradingView has no NEXUS-side quotes) → the value shows `—` / *Market data unavailable*, and features that need it (price alerts, open P&L) say so.
 
----
+## 4. Market-data providers (and adding Alpaca later)
 
-## 4. Switching market-data providers later
-
-The UI talks only to the `MarketDataProvider` interface (`src/services/market/MarketDataProvider.ts`):
+`VITE_MARKET_DATA_PROVIDER` picks the provider behind the `MarketDataProvider` interface (`src/services/market/MarketDataProvider.ts`):
 
 ```ts
-searchSymbols(query)            getQuote(symbol)
-getCandles(symbol, timeframe)   getCompanyProfile(symbol)
-getMarketMovers()
+getQuote(symbol)   getQuotes(symbols)   getBars(symbol, timeframe)
+getTopGainers()    getTopLosers()       getMostActive()
+searchSymbols(q)   getCompanyProfile(symbol)   getMarketStatus()
+capabilities: { quotes, bars, movers, search, profile }
 ```
 
-Included implementations:
-- `MockMarketDataProvider` — zero-config DEMO data.
-- `AlphaVantageProvider` (exported as `FreeMarketDataProvider`) — free tier, EOD.
+| Value | Status |
+|---|---|
+| `tradingview` (default) | Implemented. No NEXUS-side prices (all capabilities `false`); every market visual is a TradingView widget. |
+| `alphavantage` | Implemented. End-of-day quotes, bars, movers, search, profile via the Netlify proxy (25 calls/day, cached until the next close). |
+| `alpaca`, `twelvedata` | Recognised but **not implemented**: shown as "not configured", never faked. |
+| anything else (incl. `mock`) | "No verified market-data source configured". |
 
-**Switch:** set `VITE_MARKET_DATA_PROVIDER` and redeploy — or use *Settings → Market Data Status → Provider* to override per browser.
+Unsupported methods throw `MarketDataUnavailableError` and the UI shows an unavailable state. There is no mock provider and no fallback to generated data.
 
-**Add a new provider** (e.g. a paid real-time feed later):
-1. Create `src/services/market/YourProvider.ts` implementing `MarketDataProvider`. Set `freshness` honestly (`LIVE` / `DELAYED` / `EOD`), `dailyLimit`, and `refreshIntervalMs`.
-2. Wrap network calls with `cached(key, ttlMs, fetcher)` from `requestCache.ts` — you get persistent caching, in-flight de-duplication, call counting and stale-data fallback for free.
-3. If it needs a secret key, add a Netlify Function like `netlify/functions/market.ts` and call that instead of the vendor directly.
-4. Register it in `build()` and `PROVIDER_OPTIONS` in `src/services/market/index.ts`.
+**Adding Alpaca (or another provider) later**
+1. Create `src/services/market/AlpacaProvider.ts` extending `BaseProvider`. Set `sourceLabel: 'Alpaca IEX'`, `status: 'REALTIME_IEX'` (Alpaca Basic = IEX exchange only, *not* the consolidated market; the badge reads "Realtime · IEX only"), and the `capabilities` you actually implement.
+2. Keep keys server-side: add a Netlify Function (like `netlify/functions/market.ts`) that reads `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` and verifies the Supabase session; call that from the provider. For streaming, mint short-lived tokens server-side rather than shipping keys.
+3. Wrap REST calls with `cached(key, ttl, fetcher)` from `requestCache.ts` (dedupe, persistence, stale-with-timestamp).
+4. Register it in `build()` / `PROVIDER_OPTIONS` in `src/services/market/index.ts`, then set `VITE_MARKET_DATA_PROVIDER=alpaca`.
 
----
+Watchlist tickers, notes, theses, categories, risk levels and catalyst dates always live in Supabase; prices always come from the market-data layer.
+
+## 4b. Sharing TradingView charts in chat
+
+The 📈 button in any conversation (DMs, groups, every channel) opens **Share a TradingView chart**:
+1. Search a ticker. Known listings resolve to an exchange-qualified symbol (`NASDAQ:NVDA`, `NYSE:IBM`). You can type `EXCHANGE:TICKER` directly. For unknown tickers NEXUS doesn't guess: pick the exchange or let TradingView resolve the bare ticker.
+2. The message stores only `{ symbol, ticker, exchange, provider: "tradingview", sharedChart: true, interval, company }` in `messages.metadata.stock`. No prices, candles or chart points are stored.
+3. Supabase Realtime delivers it; each browser renders the official interactive TradingView chart for that exact symbol (lazy-loaded near the viewport and unloaded when scrolled far away, so long chats stay smooth). After a refresh it rebuilds from the same metadata.
+
+Older shared-stock messages may still contain price fields from the previous version; the app ignores them. `supabase/optional_cleanup_legacy_share_prices.sql` removes them if you want (optional).
 
 ## 5. Free-tier safety
 
@@ -128,11 +139,12 @@ Included implementations:
 |---|---|---|
 | Netlify | **300 credits / month**. Production deploy = 15 credits, bandwidth = 20 credits/GB, web requests = 2 credits/10k, functions = 10 credits/GB-hour. If you run out, the site **pauses until next month — you are never charged**. | First load ≈ 0.6 MB gzipped, then assets are cached as immutable → two users use well under 1 GB/month. The market proxy runs only a few times a day and is CDN-cached. **Main cost is deploys: ~20 production deploys/month fit in the free credits**, so batch your changes rather than pushing every small edit. |
 | Supabase | 500 MB database, 1 GB file storage, 5 GB egress, 2 active projects; pauses after ~1 week of inactivity | Two users → tiny. One realtime room for presence/typing + a few table subscriptions. Chat images max 5 MB each. |
-| Alpha Vantage | 25 requests / day | Quotes and 1M/3M charts share **one** daily-series call per symbol; 6M/1Y/5Y share **one** weekly call; everything cached until the next ~17:00 ET close; local symbol search first; daily budget guard stops at the limit and serves cache |
+| TradingView widgets | Free embeds | Loaded lazily only when on screen |
+| Alpha Vantage (optional) | 25 requests / day | Quotes and 1M/3M charts share **one** daily-series call per symbol; 6M/1Y/5Y share **one** weekly call; cached until the next ~17:00 ET close; budget guard stops at the limit |
 
-- No API is polled every second. The DEMO provider refreshes every 20 s (local, no network). Alpha Vantage is fetched only when the cache expires.
-- If the API limit is reached or the network fails, the UI **falls back to cached data** and marks it `·CACHED`.
-- *Settings → Market Data Status* shows provider, API calls used today, last successful update, data freshness, cache entries/size and hit/miss counts.
+- No API is polled every second. Alpha Vantage is fetched only when the cache expires.
+- If the API limit is reached or the network fails, previously cached data is shown **with its timestamp**, marked `cached`. Otherwise the value shows *Market data unavailable*.
+- *Settings → Market Data Status* shows provider, capabilities, data status, API calls used today, last successful update, and cache entries/size and hit/miss counts.
 - Supabase free projects pause after ~1 week of zero activity; click **Restore** in the dashboard if that happens.
 - Netlify: to save credits you can turn off *Deploy Previews* / *Branch deploys* (Site configuration → Build & deploy) and test locally with `npm run dev` instead.
 
@@ -165,7 +177,7 @@ src/
   lib/         env, supabase client, formatting, NYSE market clock, $TICKER parsing
   pages/       Command Center, Markets, Watchlist, Catalysts, War Room, Messages, Groups, Settings, Stock detail
   providers/   RealtimeProvider (presence, typing, unread, notifications, price alerts)
-  services/    market providers + cache; data backend (Supabase or local Demo)
+  services/    market providers (TradingView, Alpha Vantage) + symbol directory + cache; data backend (Supabase, or browser-only local mode)
   store/       zustand stores (auth, settings, realtime, market status, toasts)
   styles/      Tailwind + glass/noise/glow utilities
   types/       strong row types for every table + market types

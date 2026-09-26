@@ -47,7 +47,7 @@ export function RecentMessages({ className }: { className?: string }) {
                       <span className="ml-auto font-mono text-[10px] text-slate-600">{timeAgo(m.created_at)}</span>
                     </div>
                     <p className="line-clamp-2 text-xs text-slate-400">
-                      {m.kind === 'stock_share' && m.metadata.stock ? `📈 Shared $${m.metadata.stock.symbol} ` : m.kind === 'image' ? '📷 ' : ''}
+                      {m.kind === 'stock_share' && m.metadata.stock ? `📈 Shared ${m.metadata.stock.symbol} chart ` : m.kind === 'image' ? '📷 ' : ''}
                       <MessageContent text={m.content} />
                     </p>
                   </div>

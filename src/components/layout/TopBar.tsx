@@ -16,7 +16,7 @@ const CONN: Record<ConnectionStatus, { label: string; cls: string; icon: typeof 
   online: { label: 'Realtime', cls: 'text-emerald-300 border-emerald-400/30', icon: Wifi },
   connecting: { label: 'Connecting', cls: 'text-amber-300 border-amber-400/30', icon: Loader2 },
   offline: { label: 'Offline', cls: 'text-rose-300 border-rose-400/30', icon: WifiOff },
-  demo: { label: 'Demo mode', cls: 'text-fuchsia-300 border-fuchsia-400/30', icon: FlaskConical },
+  demo: { label: 'Local mode', cls: 'text-fuchsia-300 border-fuchsia-400/30', icon: FlaskConical },
 };
 
 function ConnectionBadge() {
@@ -24,7 +24,7 @@ function ConnectionBadge() {
   const c = CONN[status];
   return (
     <span
-      title={status === 'demo' ? 'Demo mode: data stays in this browser (syncs across tabs)' : `Supabase Realtime: ${c.label}`}
+      title={status === 'demo' ? 'Local mode: Supabase not configured, workspace data stays in this browser (syncs across tabs)' : `Supabase Realtime: ${c.label}`}
       className={cn('hidden items-center gap-1.5 rounded-full border bg-white/[0.02] px-2 py-1 font-mono text-[10px] uppercase tracking-wider sm:inline-flex', c.cls)}
     >
       <c.icon className={cn('h-3 w-3', status === 'connecting' && 'animate-spin')} />

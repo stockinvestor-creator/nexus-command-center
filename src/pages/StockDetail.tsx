@@ -1,19 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, Gauge, MessageSquare, NotebookPen, Plus, Save, Share2, Star, Swords, Zap } from 'lucide-react';
-import { useCompanyProfile, useQuote } from '@/hooks/useMarket';
+import { BellPlus, Building2, CandlestickChart, Gauge, Info, MessageSquare, NotebookPen, Plus, Save, Share2, Star, Swords, Zap } from 'lucide-react';
+import { useQuote } from '@/hooks/useMarket';
 import { useLiveTable } from '@/hooks/useLiveTable';
 import { useAuth } from '@/store/authStore';
 import { useSettings } from '@/store/settingsStore';
 import { attempt, toast } from '@/store/toastStore';
-import { isValidSymbol, normalizeSymbol } from '@/lib/tickers';
 import { cn } from '@/lib/cn';
-import { fmtChange, fmtCompact, fmtDate, fmtNumber, fmtPct, fmtPrice, timeAgo, trendClass } from '@/lib/format';
-import { lookupUniverse } from '@/services/market/universe';
+import { fmtChange, fmtCompact, fmtDate, fmtPct, fmtPrice, timeAgo, trendClass } from '@/lib/format';
+import { resolveSymbol } from '@/services/market/symbols';
+import { marketData } from '@/services/market';
 import { backend } from '@/services/backend';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
-import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { DataSourceBadge, MarketUnavailable, TradingViewBadge, UserEstimateTag } from '@/components/ui/DataSource';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Textarea, Select, Field, Input } from '@/components/ui/Field';
@@ -21,8 +20,10 @@ import { EmptyState, SkeletonRows } from '@/components/ui/States';
 import { Avatar } from '@/components/ui/Avatar';
 import { ClickRow } from '@/components/ui/ClickRow';
 import { TradingViewWidget, tv } from '@/components/widgets/TradingViewWidget';
+import { TradingViewChart } from '@/components/charts/TradingViewChart';
 import { SmartStockChart } from '@/features/market/SmartStockChart';
 import { MarketStatusPill } from '@/features/market/MarketStatus';
+import { PriceAlertModal } from '@/features/market/PriceAlertModal';
 import { saveTickerNote, type ScoreKey } from '@/features/market/api';
 import { useWatchToggle, updateWatchItem } from '@/features/watchlist/api';
 import { BIAS_META, CAT_STATUS_META } from '@/features/catalysts/api';
@@ -63,7 +64,7 @@ function ScorePanel({ symbol, note }: { symbol: string; note: TickerNote | undef
     <GlassCard
       title="Scores"
       icon={<Gauge />}
-      badge={<Badge tone="neutral" title="Scores are entered manually by you and your partner. The app does not generate financial analysis.">manual</Badge>}
+      badge={<UserEstimateTag label="Manual score" />}
       actions={
         edit ? (
           <Button size="xs" variant="primary" onClick={save} icon={<Save className="h-3 w-3" />}>
@@ -125,6 +126,7 @@ function ThesisNotes({ symbol, note }: { symbol: string; note: TickerNote | unde
     <GlassCard
       title="Shared thesis notes"
       icon={<NotebookPen />}
+      badge={<UserEstimateTag label="Team thesis" />}
       actions={
         dirty && (
           <Button
@@ -189,44 +191,78 @@ function WatchControls({ symbol }: { symbol: string }) {
   );
 }
 
+/** Quote panel for API providers (e.g. Alpha Vantage). Hidden entirely when unsupported. */
+function ProviderQuote({ ticker }: { ticker: string }) {
+  const q = useQuote(ticker);
+  if (q.unsupported) return null;
+  return (
+    <GlassCard title={`${marketData().sourceLabel} quote`} icon={<Info />} badge={q.data && <DataSourceBadge provenance={q.data.provenance} />}>
+      {q.loading && !q.data ? (
+        <SkeletonRows rows={2} />
+      ) : !q.data ? (
+        <MarketUnavailable reason={q.reason} message={q.error?.message} />
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+          {[
+            ['Last', fmtPrice(q.data.price)],
+            ['Change', `${fmtChange(q.data.change)} (${fmtPct(q.data.changePercent)})`],
+            ['Open', fmtPrice(q.data.open)],
+            ['High', fmtPrice(q.data.high)],
+            ['Low', fmtPrice(q.data.low)],
+            ['Prev close', fmtPrice(q.data.previousClose)],
+            ['Volume', fmtCompact(q.data.volume)],
+          ].map(([l, v], i) => (
+            <div key={l} className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+              <div className="label">{l}</div>
+              <div className={cn('num mt-0.5 text-sm text-slate-100', i === 1 && trendClass(q.data?.changePercent))}>{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 export default function StockDetail() {
   const params = useParams();
-  const symbol = normalizeSymbol(params.symbol ?? '');
-  const { data: q, loading: qLoading, error: qError } = useQuote(isValidSymbol(symbol) ? symbol : null);
-  const profile = useCompanyProfile(isValidSymbol(symbol) ? symbol : null);
-  const notes = useLiveTable('ticker_notes', { eq: { symbol } });
-  const catalysts = useLiveTable('catalysts', { eq: { symbol }, order: { column: 'catalyst_date', ascending: true } });
-  const trades = useLiveTable('trade_ideas', { eq: { symbol }, order: { column: 'updated_at', ascending: false } });
+  const resolved = resolveSymbol(decodeURIComponent(params.symbol ?? ''));
+  const ticker = resolved?.ticker ?? '';
+  const tvSymbol = resolved?.tvSymbol ?? '';
+  const provider = marketData();
+  const notes = useLiveTable('ticker_notes', { eq: { symbol: ticker } });
+  const catalysts = useLiveTable('catalysts', { eq: { symbol: ticker }, order: { column: 'catalyst_date', ascending: true } });
+  const trades = useLiveTable('trade_ideas', { eq: { symbol: ticker }, order: { column: 'updated_at', ascending: false } });
   const profiles = useAuth((s) => s.profiles);
-  const symbolInfoOn = useSettings((s) => s.widgets.symbolInfo);
+  const widgets = useSettings((s) => s.widgets);
+  const { item: watchItem, toggle: toggleWatch } = useWatchToggle(ticker || 'X');
   const [mentions, setMentions] = useState<Message[] | null>(null);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
 
   useEffect(() => {
-    if (!isValidSymbol(symbol)) return;
+    if (!ticker) return;
     let alive = true;
     setMentions(null);
     backend
-      .select('messages', { ilike: { column: 'content', pattern: `%$${symbol}%` }, order: { column: 'created_at', ascending: false }, limit: 20 })
-      .then((rows) => alive && setMentions(rows.filter((m) => new RegExp(`\\$${symbol.replace('.', '\\.')}\\b`, 'i').test(m.content))))
+      .select('messages', { ilike: { column: 'content', pattern: `%$${ticker}%` }, order: { column: 'created_at', ascending: false }, limit: 20 })
+      .then((rows) => alive && setMentions(rows.filter((m) => new RegExp(`\\$${ticker.replace('.', '\\.')}\\b`, 'i').test(m.content))))
       .catch(() => alive && setMentions([]));
     return () => {
       alive = false;
     };
-  }, [symbol]);
+  }, [ticker]);
 
-  if (!isValidSymbol(symbol)) return <EmptyState title="Invalid ticker" body="Use letters, numbers, dots or dashes (e.g. BRK.B)." />;
+  if (!resolved) return <EmptyState title="Invalid ticker" body="Use a ticker like NVDA, or EXCHANGE:TICKER like NYSE:IBM." />;
 
-  const company = profile.data?.name ?? lookupUniverse(symbol)?.name;
   const note = notes.rows[0];
 
-  const shareToGeneral = async (meta: StockShareMeta, comment: string) => {
+  const shareToStocks = async (meta: StockShareMeta, comment: string) => {
     const chans = await backend.select('channels', { eq: { slug: 'stocks' } });
     const ch: Channel | undefined = chans[0] ?? (await backend.select('channels', { eq: { type: 'channel' } }))[0];
     if (!ch) return toast.error('No channel to share to');
     const ok = await attempt(() => sendMessage({ channel: ch, content: comment, kind: 'stock_share', metadata: { stock: meta }, memberIds: profiles.map((p) => p.id) }));
-    if (ok) toast.success(`Shared to #${ch.name}`, undefined);
+    if (ok) toast.success(`Shared ${meta.symbol} to #${ch.name}`);
   };
 
   return (
@@ -234,33 +270,24 @@ export default function StockDetail() {
       {/* header */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 px-3 pb-4 pt-5 sm:px-5">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-3xl font-bold tracking-wide text-white [text-shadow:0_0_30px_rgba(34,211,238,0.35)]">${symbol}</h1>
-            {q && <FreshnessBadge freshness={q.freshness} asOf={q.asOf} />}
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-display text-3xl font-bold tracking-wide text-white [text-shadow:0_0_30px_rgba(34,211,238,0.35)]">${ticker}</h1>
+            <Badge tone={resolved.verified ? 'cyan' : 'amber'} title={resolved.verified ? 'Exchange-qualified TradingView symbol' : 'Exchange not verified; TradingView resolves the bare ticker'}>
+              {resolved.exchange ?? 'exchange unverified'}
+            </Badge>
           </div>
-          <p className="text-sm text-slate-400">
-            {company ?? '—'}
-            {profile.data?.exchange && <span className="text-slate-600"> · {profile.data.exchange}</span>}
-          </p>
-        </div>
-        <div>
-          {qLoading && !q ? (
-            <div className="h-9 w-40 animate-pulse rounded-lg bg-white/5" />
-          ) : qError && !q ? (
-            <p className="text-sm text-amber-400">{qError.message}</p>
-          ) : (
-            <div className="flex items-baseline gap-3">
-              <AnimatedNumber value={q?.price} format={fmtPrice} className="text-3xl font-semibold text-white" />
-              <span className={cn('num text-base', trendClass(q?.changePercent))}>
-                {fmtChange(q?.change)} ({fmtPct(q?.changePercent)})
-              </span>
-            </div>
-          )}
+          <p className="text-sm text-slate-400">{resolved.name ?? tvSymbol}</p>
         </div>
         <MarketStatusPill />
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button size="sm" variant={watchItem ? 'outline' : 'secondary'} icon={<Star className={cn('h-4 w-4', watchItem && 'fill-current')} />} onClick={toggleWatch}>
+            {watchItem ? 'On watchlist' : 'Watch'}
+          </Button>
+          <Button size="sm" icon={<BellPlus className="h-4 w-4" />} onClick={() => setAlertOpen(true)}>
+            Alert
+          </Button>
           <Button size="sm" icon={<Share2 className="h-4 w-4" />} onClick={() => setShareOpen(true)}>
-            Share to chat
+            Share chart
           </Button>
           <Button size="sm" variant="primary" icon={<Swords className="h-4 w-4" />} onClick={() => setTradeOpen(true)}>
             New trade idea
@@ -269,50 +296,39 @@ export default function StockDetail() {
       </div>
 
       <div className="grid gap-3 px-3 sm:px-5 xl:grid-cols-12">
-        <div className="space-y-3 xl:col-span-9">
-          <div className="h-[540px]">
-            <SmartStockChart symbol={symbol} company={company} />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            {[
-              ['Open', fmtPrice(q?.open)],
-              ['High', fmtPrice(q?.high)],
-              ['Low', fmtPrice(q?.low)],
-              ['Prev close', fmtPrice(q?.previousClose)],
-              ['Volume', fmtCompact(q?.volume)],
-              ['Market cap', fmtCompact(profile.data?.marketCap)],
-              ['52w range', profile.data?.week52Low != null ? `${fmtNumber(profile.data.week52Low)} – ${fmtNumber(profile.data.week52High)}` : '—'],
-              ['P/E', profile.data?.peRatio != null ? fmtNumber(profile.data.peRatio) : '—'],
-            ].map(([l, v]) => (
-              <div key={l} className="glass px-3 py-2.5">
-                <div className="label">{l}</div>
-                <div className="num mt-0.5 text-sm text-slate-100">{v}</div>
+        <div className="min-w-0 space-y-3 xl:col-span-9">
+          {widgets.symbolInfo && (
+            <div className="glass overflow-hidden">
+              <div className="h-[190px] sm:h-[170px]">
+                <TradingViewWidget script="symbol-info" config={tv.symbolInfo(tvSymbol)} lazy={false} failureText="Market data temporarily unavailable" />
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          <GlassCard
+            title={<span className="flex items-center gap-2">Chart · <span className="font-mono text-neon-cyan">{tvSymbol}</span></span>}
+            icon={<CandlestickChart />}
+            badge={<TradingViewBadge className="hidden sm:inline-flex" />}
+            bodyClassName="p-0"
+          >
+            <div className="h-[460px] sm:h-[600px]">
+              <TradingViewChart symbol={tvSymbol} />
+            </div>
+          </GlassCard>
+
+          <ProviderQuote ticker={ticker} />
+          {provider.capabilities.bars && (
+            <div className="h-[480px]">
+              <SmartStockChart symbol={ticker} company={resolved.name} />
+            </div>
+          )}
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <ThesisNotes symbol={symbol} note={note} />
-            <GlassCard title="Company" icon={<Building2 />} badge={profile.data && <FreshnessBadge freshness={profile.data.freshness} />}>
-              {profile.loading && !profile.data ? (
-                <SkeletonRows rows={3} />
-              ) : profile.error && !profile.data ? (
-                <p className="text-xs text-slate-500">{profile.error.message}</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  <div className="flex flex-wrap gap-1.5">
-                    {profile.data?.sector && <Badge tone="blue">{profile.data.sector}</Badge>}
-                    {profile.data?.industry && <Badge tone="violet">{profile.data.industry}</Badge>}
-                  </div>
-                  <p className="line-clamp-6 text-xs leading-relaxed text-slate-400">{profile.data?.description ?? 'No description available.'}</p>
-                  {profile.data?.website && /^https?:\/\//.test(profile.data.website) && (
-                    <a href={profile.data.website} target="_blank" rel="noopener noreferrer" className="text-xs text-neon-cyan hover:underline">
-                      {profile.data.website}
-                    </a>
-                  )}
-                </div>
-              )}
+            <ThesisNotes symbol={ticker} note={note} />
+            <GlassCard title="Company profile" icon={<Building2 />} badge={<TradingViewBadge className="hidden sm:inline-flex" />} bodyClassName="p-0" collapseId="tv-profile">
+              <div className="h-[330px]">
+                <TradingViewWidget script="symbol-profile" config={tv.symbolProfile(tvSymbol)} failureText="Company profile temporarily unavailable" />
+              </div>
             </GlassCard>
           </div>
 
@@ -329,7 +345,7 @@ export default function StockDetail() {
               {catalysts.loading ? (
                 <SkeletonRows rows={3} />
               ) : catalysts.rows.length === 0 ? (
-                <EmptyState icon={<Zap />} title={`No catalysts for $${symbol}`} />
+                <EmptyState icon={<Zap />} title={`No catalysts for $${ticker}`} />
               ) : (
                 <ul className="space-y-1.5">
                   {catalysts.rows.map((c) => (
@@ -382,7 +398,7 @@ export default function StockDetail() {
             {mentions == null ? (
               <SkeletonRows rows={3} />
             ) : mentions.length === 0 ? (
-              <EmptyState icon={<MessageSquare />} title={`Nobody has mentioned $${symbol} yet`} />
+              <EmptyState icon={<MessageSquare />} title={`Nobody has mentioned $${ticker} yet`} />
             ) : (
               <ul className="space-y-1">
                 {mentions.map((m) => {
@@ -406,24 +422,17 @@ export default function StockDetail() {
               </ul>
             )}
           </GlassCard>
-
-          {symbolInfoOn && (
-            <GlassCard title="TradingView symbol info" badge={<FreshnessBadge freshness="DELAYED" note="TradingView widget" />} bodyClassName="p-0" collapseId="tv-symbol-info">
-              <div className="h-[200px]">
-                <TradingViewWidget script="symbol-info" config={tv.symbolInfo(symbol)} />
-              </div>
-            </GlassCard>
-          )}
         </div>
 
         <div className="space-y-3 xl:col-span-3">
-          <ScorePanel symbol={symbol} note={note} />
-          <WatchControls symbol={symbol} />
+          <ScorePanel symbol={ticker} note={note} />
+          <WatchControls symbol={ticker} />
         </div>
       </div>
 
-      <TradeForm open={tradeOpen} onClose={() => setTradeOpen(false)} defaultSymbol={symbol} />
-      <ShareStockModal key={symbol} open={shareOpen} onClose={() => setShareOpen(false)} onShare={shareToGeneral} initialSymbol={symbol} />
+      <TradeForm open={tradeOpen} onClose={() => setTradeOpen(false)} defaultSymbol={ticker} />
+      <ShareStockModal key={tvSymbol} open={shareOpen} onClose={() => setShareOpen(false)} onShare={shareToStocks} initial={resolved} />
+      <PriceAlertModal symbol={ticker} open={alertOpen} onClose={() => setAlertOpen(false)} lastPrice={null} />
     </div>
   );
 }

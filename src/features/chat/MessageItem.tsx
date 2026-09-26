@@ -107,7 +107,7 @@ function MessageItemInner({ msg, author, grouped, isMine, reactions, replyTo, re
             {replyTo ? (
               <>
                 <span className="shrink-0 whitespace-nowrap font-medium text-slate-400">{replyAuthor?.display_name}</span>
-                <span className="min-w-0 truncate">{replyTo.content || (replyTo.kind === 'image' ? '📷 image' : replyTo.metadata.stock ? `$${replyTo.metadata.stock.symbol}` : '')}</span>
+                <span className="min-w-0 truncate">{replyTo.content || (replyTo.kind === 'image' ? '📷 image' : replyTo.metadata.stock ? `📈 ${replyTo.metadata.stock.symbol} chart` : '')}</span>
               </>
             ) : (
               <span className="italic">original message deleted</span>
@@ -149,7 +149,7 @@ function MessageItemInner({ msg, author, grouped, isMine, reactions, replyTo, re
           )
         )}
 
-        {msg.kind === 'stock_share' && msg.metadata.stock && <StockShareCard meta={msg.metadata.stock} />}
+        {msg.kind === 'stock_share' && msg.metadata.stock && <StockShareCard meta={msg.metadata.stock} sharedBy={author?.display_name} onReply={() => onReply(msg)} />}
         {msg.attachment_path && <ImageAttachment path={msg.attachment_path} />}
         {urls.map((u) => (
           <LinkPreview key={u} url={u} />

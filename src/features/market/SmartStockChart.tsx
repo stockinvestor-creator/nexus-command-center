@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { StockChart } from '@/components/charts/StockChart';
 import { useWatchToggle } from '@/features/watchlist/api';
-import { lookupUniverse } from '@/services/market/universe';
+import { lookupSymbol } from '@/services/market/symbols';
 import type { Timeframe } from '@/types/market';
 import { PriceAlertModal, usePriceAlerts } from './PriceAlertModal';
 
-/** StockChart wired to the watchlist + price alerts. */
+/**
+ * NEXUS chart drawn with TradingView Lightweight Charts from the configured API provider's
+ * REAL bars (e.g. Alpha Vantage end-of-day). Only rendered when the provider supports bars.
+ */
 export function SmartStockChart({ symbol, company, initialTimeframe, className }: { symbol: string; company?: string; initialTimeframe?: Timeframe; className?: string }) {
   const { item, toggle } = useWatchToggle(symbol);
   const alerts = usePriceAlerts(symbol);
@@ -16,7 +19,7 @@ export function SmartStockChart({ symbol, company, initialTimeframe, className }
       <StockChart
         key={symbol}
         symbol={symbol}
-        company={company ?? lookupUniverse(symbol)?.name}
+        company={company ?? lookupSymbol(symbol)?.name}
         initialTimeframe={initialTimeframe}
         className={className}
         alertLevels={alerts.rows.filter((a) => a.active).map((a) => a.price)}

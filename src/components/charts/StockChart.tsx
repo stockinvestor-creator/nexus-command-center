@@ -31,14 +31,14 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useCandles, useQuote } from '@/hooks/useMarket';
+import { useBars, useQuote } from '@/hooks/useMarket';
 import { TIMEFRAMES, type Candle, type Timeframe } from '@/types/market';
 import { cn } from '@/lib/cn';
 import { fmtCompact, fmtPct, fmtPrice, trendClass } from '@/lib/format';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
+import { DataSourceBadge, MarketUnavailable, STATUS_LABEL } from '@/components/ui/DataSource';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { IconButton } from '@/components/ui/Button';
-import { ErrorState, Spinner } from '@/components/ui/States';
+import { Spinner } from '@/components/ui/States';
 
 export type ChartType = 'candles' | 'line' | 'area';
 
@@ -101,10 +101,10 @@ function StockChartInner({
   const linesRef = useRef<IPriceLine[]>([]);
   const byTime = useRef(new Map<number, Candle>());
 
-  const candlesQ = useCandles(symbol, timeframe);
+  const candlesQ = useBars(symbol, timeframe);
   const quoteQ = useQuote(symbol);
   const series = candlesQ.data;
-  const candles = useMemo(() => series?.candles ?? [], [series]);
+  const candles = useMemo(() => series?.bars ?? [], [series]);
   const intraday = series?.intraday ?? false;
 
   /* ───── create chart once ───── */
@@ -330,7 +330,7 @@ function StockChartInner({
     ctx.drawImage(canvas, 0, 36);
     ctx.fillStyle = '#e2e8f0';
     ctx.font = '600 16px "JetBrains Mono", monospace';
-    ctx.fillText(`${symbol} · ${timeframe} · ${series?.freshness ?? ''}`, 12, 24);
+    ctx.fillText(`${symbol} · ${timeframe} · ${series ? `${series.provenance.source} ${STATUS_LABEL[series.provenance.status]}` : ''}`, 12, 24);
     ctx.fillStyle = '#64748b';
     ctx.font = '11px "JetBrains Mono", monospace';
     ctx.fillText(`Exported ${new Date().toLocaleString()} · Charts by TradingView Lightweight Charts`, 260, 24);
@@ -350,7 +350,7 @@ function StockChartInner({
   const rangeChange = first && last ? ((last.close - first.open) / first.open) * 100 : null;
   const quote = quoteQ.data;
   const price = quote?.price ?? last?.close ?? null;
-  const freshness = series?.freshness ?? quote?.freshness ?? 'DEMO';
+  const provenance = series?.provenance ?? quote?.provenance ?? null;
 
   const TypeBtn = ({ t, icon, label }: { t: ChartType; icon: ReactNode; label: string }) => (
     <IconButton label={label} active={type === t} onClick={() => setType(t)}>
@@ -372,7 +372,7 @@ function StockChartInner({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-lg font-bold tracking-wide text-white">{symbol}</span>
-            <FreshnessBadge freshness={freshness} asOf={quote?.asOf} note={series?.note} />
+            {provenance && <DataSourceBadge provenance={provenance} />}
           </div>
           {!compactHeader && company && <p className="truncate text-xs text-slate-500">{company}</p>}
         </div>
@@ -497,7 +497,7 @@ function StockChartInner({
         )}
         {candlesQ.error && !series && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <ErrorState message={candlesQ.error.message} onRetry={candlesQ.refetch} />
+            <MarketUnavailable reason={candlesQ.reason} message={candlesQ.error.message} />
           </div>
         )}
         {series && candles.length === 0 && (
@@ -506,7 +506,7 @@ function StockChartInner({
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-white/[0.04] px-4 py-1.5 font-mono text-[10px] text-slate-500">
-        <span className="truncate">{series?.note ?? (intraday ? 'Times shown in US/Eastern' : 'Daily/weekly bars')}</span>
+        <span className="truncate">{series?.provenance.note ?? (intraday ? 'Times shown in US/Eastern' : 'Daily/weekly bars')}</span>
         <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener noreferrer" className="shrink-0 hover:text-slate-300">
           Charts by TradingView
         </a>
