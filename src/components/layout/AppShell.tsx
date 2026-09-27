@@ -6,6 +6,7 @@ import { TopBar } from './TopBar';
 import { MobileNav } from './MobileNav';
 import { TickerTape } from './TickerTape';
 import { CommandPalette } from './CommandPalette';
+import { WhyDrawer } from '@/features/why/WhyDrawer';
 import { Ambient } from '@/components/effects/Ambient';
 import { Toaster } from '@/components/ui/Toaster';
 import { Spinner } from '@/components/ui/States';
@@ -63,6 +64,7 @@ export function AppShell() {
       </div>
       <MobileNav />
       <CommandPalette />
+      <WhyDrawer />
       <Toaster />
     </RealtimeProvider>
   );

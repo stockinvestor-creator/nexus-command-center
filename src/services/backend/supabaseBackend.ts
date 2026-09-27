@@ -2,7 +2,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { Insert, Patch, Row, TableName } from '@/types/db';
 import { uid } from '@/lib/id';
 import { useConnection } from '@/store/connectionStore';
-import type { AuthUser, Backend, ChangeEvent, PresenceUser, QueryOptions, RealtimeRoom, TypingEvent } from './types';
+import type { AuthUser, Backend, ChangeEvent, PresenceUser, QueryOptions, RealtimeRoom, RpcName, TypingEvent } from './types';
 
 const mapUser = (u: User | null | undefined): AuthUser | null => (u ? { id: u.id, email: u.email ?? '' } : null);
 
@@ -60,6 +60,12 @@ export class SupabaseBackend implements Backend {
     const { data, error } = await limited;
     fail(error);
     return (data ?? []) as Row<K>[];
+  }
+
+  async rpc<T = unknown>(fn: RpcName, args: Record<string, unknown>): Promise<T> {
+    const { data, error } = await this.sb.rpc(fn, args);
+    fail(error);
+    return data as T;
   }
 
   async insert<K extends TableName>(table: K, values: Insert<K>): Promise<Row<K>> {
@@ -210,6 +216,11 @@ export class SupabaseBackend implements Backend {
         if (Date.now() - lastTyping < 2500) return; // throttle
         lastTyping = Date.now();
         void ch.send({ type: 'broadcast', event: 'typing', payload: { userId: me.id, name: me.name, channelId } });
+      },
+      setStatus: (status) => {
+        if (me.status === status) return;
+        me.status = status;
+        void ch.track(me);
       },
       leave: () => {
         void ch.untrack();

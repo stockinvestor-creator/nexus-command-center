@@ -72,3 +72,9 @@ export const parseNum = (s: string): number | null => {
   const n = Number(s.replace(/[$,%\s]/g, ''));
   return Number.isFinite(n) ? n : null;
 };
+
+/** Local calendar date YYYY-MM-DD, offset by N days. */
+export function isoDay(offsetDays = 0, from = Date.now()): string {
+  const d = new Date(from + offsetDays * 86400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

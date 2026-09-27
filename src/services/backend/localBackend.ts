@@ -3,7 +3,7 @@ import { uid } from '@/lib/id';
 import { safeSession, safeStorage } from '@/lib/safeStorage';
 import { useConnection } from '@/store/connectionStore';
 import { DEMO_USERS, seedLocalDb, type LocalDB } from './localSeed';
-import type { AuthUser, Backend, ChangeEvent, PresenceUser, QueryOptions, RealtimeRoom, TypingEvent } from './types';
+import type { AuthUser, Backend, ChangeEvent, PresenceUser, QueryOptions, RealtimeRoom, RpcName, TypingEvent } from './types';
 
 const DB_KEY = 'ncc.demo.db.v1';
 const AS_KEY = 'ncc.demo.as';
@@ -34,7 +34,33 @@ const DEFAULTS: { [K in TableName]?: () => Partial<Tables[K]> } = {
   notifications: () => ({ actor_id: null, body: null, link: null, read_at: null }),
   ticker_notes: () => ({ thesis: null, catalyst_score: null, momentum_score: null, volatility_score: null, risk_score: null, updated_by: null }),
   price_alerts: () => ({ active: true, triggered_at: null }),
+  sim_accounts: () => ({ starting_cash: 100000 }),
+  sim_positions: () => ({
+    status: 'open', shares: 0, entry_date: new Date().toISOString().slice(0, 10), opened_at: new Date().toISOString(), closed_at: null,
+    target: null, stop: null, thesis: null, catalyst: null, notes: null, realized_pnl: 0, closed_qty: 0, closed_value: 0,
+    trade_idea_id: null, mistakes: null, lessons: null, result_notes: null, screenshots: [],
+  }),
+  sim_transactions: () => ({ realized_pnl: 0, executed_at: new Date().toISOString(), note: null }),
+  research_notes: () => ({ content: '', updated_by: null }),
+  research_note_history: () => ({ edited_by: null }),
+  event_annotations: () => ({ event: {}, priority: null, note: null, bookmarked: false, updated_by: null }),
+  notification_prefs: () => ({ prefs: {} }),
+  briefings: () => ({ kind: 'morning', generated_at: new Date().toISOString(), data_refreshed_at: null, sources: [], snapshot: {} }),
+  predictions: () => ({
+    symbol: null, prediction_type: 'direction', expected_move: null, target_price: null, downside_price: null, time_horizon: null,
+    catalyst: null, prediction_date: new Date().toISOString().slice(0, 10), resolution_date: null, thesis: null, invalidation: null,
+    notes: null, baseline_price: null, baseline_source: null, baseline_at: null, status: 'open', actual_outcome: null, actual_move: null,
+    actual_price: null, actual_price_source: null, resolved_at: null, resolved_by: null, result_notes: null, lesson: null,
+  }),
+  prediction_history: () => ({ changed_at: new Date().toISOString(), old_values: null, new_values: null, changed_by: null }),
+  prediction_links: () => ({ label: null, url: null, created_by: null }),
 };
+
+/* Mirrors the SQL triggers on predictions (supabase/migrations/20260927_intelligence_release.sql). */
+const P_CORE = ['symbol', 'title', 'prediction_type', 'direction', 'expected_move', 'target_price', 'downside_price', 'time_horizon', 'catalyst', 'prediction_date', 'resolution_date', 'confidence', 'thesis', 'invalidation'];
+const P_RES = ['status', 'actual_outcome', 'actual_move', 'actual_price', 'actual_price_source', 'resolved_at'];
+const P_NOTE = ['result_notes', 'lesson', 'notes'];
+const P_IMMUTABLE = ['created_at', 'created_by', 'baseline_price', 'baseline_at', 'baseline_source'];
 
 const UNIQUE: { [K in TableName]?: string[][] } = {
   channel_members: [['channel_id', 'user_id']],
@@ -43,11 +69,17 @@ const UNIQUE: { [K in TableName]?: string[][] } = {
   watchlist_items: [['watchlist_id', 'symbol']],
   ticker_notes: [['symbol']],
   channels: [['slug'], ['dm_key']],
+  sim_accounts: [['user_id']],
+  research_notes: [['symbol', 'section']],
+  event_annotations: [['event_key']],
+  notification_prefs: [['user_id']],
+  briefings: [['user_id', 'briefing_date', 'kind']],
 };
 
 const HAS_UPDATED_AT = new Set<TableName>([
   'profiles', 'channels', 'channel_members', 'messages', 'watchlists', 'watchlist_items',
   'trade_ideas', 'trade_comments', 'catalysts', 'ticker_notes', 'price_alerts',
+  'sim_accounts', 'sim_positions', 'research_notes', 'event_annotations', 'notification_prefs', 'briefings', 'predictions',
 ]);
 
 function likeToRegex(pattern: string): RegExp {
@@ -223,10 +255,12 @@ export class LocalBackend implements Backend {
     const old = list[idx];
     const next = { ...old, ...patch } as Row<K>;
     if (HAS_UPDATED_AT.has(table)) (next as unknown as Record<string, unknown>).updated_at = new Date().toISOString();
+    if (table === 'predictions') this.guardPrediction(old as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>);
     this.checkUnique(table, next, id);
     list[idx] = next;
     this.persist();
     this.emit(table, { type: 'UPDATE', new: next as unknown as AnyRow, old: old as unknown as AnyRow });
+    this.afterUpdate(table, old, next);
     return structuredClone(next);
   }
 
@@ -263,6 +297,12 @@ export class LocalBackend implements Backend {
       for (const m of this.db.messages) if (m.reply_to === id) m.reply_to = null;
     }
     if (table === 'watchlists') drop('watchlist_items', 'watchlist_id');
+    if (table === 'sim_positions') drop('sim_transactions', 'position_id');
+    if (table === 'research_notes') drop('research_note_history', 'note_id');
+    if (table === 'predictions') {
+      drop('prediction_history', 'prediction_id');
+      drop('prediction_links', 'prediction_id');
+    }
     if (table === 'trade_ideas') {
       drop('trade_comments', 'trade_id');
       drop('trade_events', 'trade_id');
@@ -270,7 +310,105 @@ export class LocalBackend implements Backend {
     }
   }
 
+  private guardPrediction(o: Record<string, unknown>, n: Record<string, unknown>) {
+    const diff = (keys: string[]) => keys.some((k) => JSON.stringify(o[k] ?? null) !== JSON.stringify(n[k] ?? null));
+    if (diff(P_IMMUTABLE)) throw new Error('created_at, created_by and baseline values are immutable');
+    const core = diff(P_CORE);
+    const res = diff(P_RES);
+    if (o.status !== 'open' && (core || res)) throw new Error('This prediction is resolved and locked. Add notes or a lesson instead.');
+    if (res && n.status === 'open') throw new Error('Resolve a prediction with a final status (correct, partial, incorrect, invalidated or expired).');
+    if (res) {
+      n.resolved_at = n.resolved_at ?? new Date().toISOString();
+      n.resolved_by = this.currentUser()?.id ?? null;
+    }
+  }
+
+  private afterUpdate<K extends TableName>(table: K, oldRow: Row<K>, newRow: Row<K>) {
+    const o = oldRow as unknown as Record<string, unknown>;
+    const n = newRow as unknown as Record<string, unknown>;
+    if (table === 'research_notes' && o.content !== n.content) {
+      void this.insert('research_note_history', {
+        note_id: o.id as string, symbol: o.symbol as string, section: o.section as Tables['research_notes']['section'],
+        content: o.content as string, edited_by: (o.updated_by as string | null) ?? null, edited_at: o.updated_at as string,
+      });
+    }
+    if (table === 'predictions') {
+      const oldC: Record<string, unknown> = {};
+      const newC: Record<string, unknown> = {};
+      for (const k of [...P_CORE, ...P_RES, 'notes', 'result_notes', 'lesson']) {
+        if (JSON.stringify(o[k] ?? null) !== JSON.stringify(n[k] ?? null)) {
+          oldC[k] = o[k] ?? null;
+          newC[k] = n[k] ?? null;
+        }
+      }
+      const keys = Object.keys(oldC);
+      if (!keys.length) return;
+      const kind = keys.some((k) => P_RES.includes(k)) ? 'resolve' : keys.every((k) => P_NOTE.includes(k)) ? 'note' : 'edit';
+      void this.insert('prediction_history', { prediction_id: n.id as string, change_type: kind, changed_by: this.currentUser()?.id ?? null, old_values: oldC, new_values: newC });
+    }
+  }
+
+  /** Local emulation of the simulator RPCs (same maths as the SQL functions). */
+  async rpc<T = unknown>(fn: RpcName, args: Record<string, unknown>): Promise<T> {
+    const me = this.currentUser();
+    if (!me) throw new Error('Not signed in');
+    const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const r4 = (v: number) => Math.round(v * 10000) / 10000;
+    if (fn === 'sim_open_position') {
+      const shares = num(args.p_shares);
+      const price = num(args.p_price);
+      if (!shares || shares <= 0) throw new Error('Shares must be positive');
+      if (!price || price <= 0) throw new Error('Price must be positive');
+      const entry = (args.p_entry_date as string) || new Date().toISOString().slice(0, 10);
+      const pos = await this.insert('sim_positions', {
+        owner_id: me.id, symbol: String(args.p_symbol).toUpperCase(), direction: args.p_direction as 'long' | 'short', shares, avg_entry: price,
+        entry_date: entry, target: num(args.p_target), stop: num(args.p_stop), thesis: (args.p_thesis as string) ?? null,
+        catalyst: (args.p_catalyst as string) ?? null, notes: (args.p_notes as string) ?? null, trade_idea_id: (args.p_trade_idea as string) ?? null,
+      });
+      await this.insert('sim_transactions', { position_id: pos.id, user_id: me.id, type: 'open', shares, price, executed_at: new Date(entry).toISOString() });
+      return pos as T;
+    }
+    if (fn === 'sim_apply_transaction') {
+      const pos = this.db.sim_positions.find((p) => p.id === args.p_position);
+      if (!pos) throw new Error('Position not found');
+      if (pos.owner_id !== me.id) throw new Error('Only the owner can trade this simulated position');
+      if (pos.status !== 'open') throw new Error('Position is closed');
+      const price = num(args.p_price);
+      if (!price || price <= 0) throw new Error('Price must be positive');
+      let type = args.p_type as 'add' | 'reduce' | 'close';
+      let qty = num(args.p_shares) ?? 0;
+      const dir = pos.direction === 'long' ? 1 : -1;
+      const at = (args.p_executed_at as string) || new Date().toISOString();
+      let pnl = 0;
+      let next: Tables['sim_positions'];
+      if (type === 'add') {
+        if (qty <= 0) throw new Error('Shares must be positive');
+        next = await this.update('sim_positions', pos.id, { avg_entry: r4((pos.shares * pos.avg_entry + qty * price) / (pos.shares + qty)), shares: pos.shares + qty });
+      } else if (type === 'reduce' || type === 'close') {
+        if (type === 'close') qty = pos.shares;
+        if (qty <= 0 || qty > pos.shares) throw new Error('Shares must be between 0 and the open quantity');
+        pnl = r2((price - pos.avg_entry) * qty * dir);
+        const left = pos.shares - qty;
+        next = await this.update('sim_positions', pos.id, {
+          shares: left, realized_pnl: r2(pos.realized_pnl + pnl), closed_qty: pos.closed_qty + qty, closed_value: pos.closed_value + qty * price,
+          status: left === 0 ? 'closed' : 'open', closed_at: left === 0 ? at : pos.closed_at,
+        });
+        if (type === 'reduce' && left === 0) type = 'close';
+      } else throw new Error(`Unknown transaction type ${String(type)}`);
+      await this.insert('sim_transactions', { position_id: pos.id, user_id: me.id, type, shares: qty, price, realized_pnl: pnl, executed_at: at, note: (args.p_note as string) ?? null });
+      return next as T;
+    }
+    throw new Error(`RPC ${fn} is not available in Demo Mode`);
+  }
+
   private afterInsert<K extends TableName>(table: K, row: Row<K>) {
+    if (table === 'predictions') {
+      const p = row as unknown as Tables['predictions'];
+      const { updated_at: _u, ...rest } = p;
+      void _u;
+      void this.insert('prediction_history', { prediction_id: p.id, change_type: 'create', changed_by: p.created_by, new_values: rest as unknown as Record<string, unknown> });
+    }
     // mirror the SQL trigger that gives new public channels to everyone
     if (table === 'channels') {
       const c = row as unknown as Tables['channels'];
@@ -359,8 +497,10 @@ export class LocalBackend implements Backend {
       bc.onmessage = (ev: MessageEvent<{ kind: 'hb' | 'typing' | 'bye'; user: PresenceUser; channelId?: string }>) => {
         const d = ev.data;
         if (d.kind === 'hb') {
-          const isNew = !seen.has(d.user.id);
+          const prev = seen.get(d.user.id);
+          const isNew = !prev;
           seen.set(d.user.id, { user: d.user, at: Date.now() });
+          if (prev && prev.user.status !== d.user.status) publish();
           if (isNew) {
             bc.postMessage({ kind: 'hb', user: me });
             publish();
@@ -396,6 +536,12 @@ export class LocalBackend implements Backend {
         if (Date.now() - lastTyping < 2500) return;
         lastTyping = Date.now();
         bc?.postMessage({ kind: 'typing', user: me, channelId });
+      },
+      setStatus: (status) => {
+        if (me.status === status) return;
+        me.status = status;
+        beat();
+        publish();
       },
       leave: () => {
         bye();

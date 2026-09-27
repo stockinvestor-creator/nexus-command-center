@@ -32,6 +32,11 @@ import { TradeForm } from '@/features/trades/TradeForm';
 import { MessageContent } from '@/features/chat/MessageContent';
 import { ShareStockModal } from '@/features/chat/ShareStockModal';
 import { sendMessage } from '@/features/chat/api';
+import { WhyButton } from '@/features/why/WhyButton';
+import { ResearchSourceBar } from '@/features/research/ResearchSourceBar';
+import { EventList } from '@/features/intel/EventList';
+import { intelKeys, intelView, useNews, useSecFilings } from '@/hooks/useIntel';
+import { mergeEvents } from '@/services/intel/client';
 import { RISK_LEVELS, WATCH_CATEGORIES, WATCH_DIRECTIONS, type Channel, type Message, type StockShareMeta, type TickerNote } from '@/types/db';
 
 const SCORES: { key: ScoreKey; label: string; hint: string; gradient: string }[] = [
@@ -280,6 +285,10 @@ export default function StockDetail() {
         </div>
         <MarketStatusPill />
         <div className="ml-auto flex flex-wrap gap-2">
+          <WhyButton symbol={ticker} className="h-8 px-3" />
+          <Link to={`/research/${ticker}`}><Button size="sm" variant="ghost">Research</Button></Link>
+          <Link to={`/predictions?new=1&symbol=${ticker}`}><Button size="sm" variant="ghost">Predict</Button></Link>
+          <Link to={`/portfolio?new=1&symbol=${ticker}`}><Button size="sm" variant="ghost">Simulate</Button></Link>
           <Button size="sm" variant={watchItem ? 'outline' : 'secondary'} icon={<Star className={cn('h-4 w-4', watchItem && 'fill-current')} />} onClick={toggleWatch}>
             {watchItem ? 'On watchlist' : 'Watch'}
           </Button>
@@ -295,6 +304,7 @@ export default function StockDetail() {
         </div>
       </div>
 
+      <ResearchSourceBar symbol={ticker} className="px-3 pb-3 sm:px-5" />
       <div className="grid gap-3 px-3 sm:px-5 xl:grid-cols-12">
         <div className="min-w-0 space-y-3 xl:col-span-9">
           {widgets.symbolInfo && (
@@ -331,6 +341,8 @@ export default function StockDetail() {
               </div>
             </GlassCard>
           </div>
+
+          <TickerIntel ticker={ticker} />
 
           <div className="grid gap-3 lg:grid-cols-2">
             <GlassCard
@@ -434,5 +446,31 @@ export default function StockDetail() {
       <ShareStockModal key={tvSymbol} open={shareOpen} onClose={() => setShareOpen(false)} onShare={shareToStocks} initial={resolved} />
       <PriceAlertModal symbol={ticker} open={alertOpen} onClose={() => setAlertOpen(false)} lastPrice={null} />
     </div>
+  );
+}
+
+/** SEC filings + ticker-tagged news for this stock (shared caches with Catalyst Intelligence). */
+function TickerIntel({ ticker }: { ticker: string }) {
+  const t = [ticker];
+  const sec = intelView(useSecFilings(t), intelKeys.sec(t));
+  const news = intelView(useNews(t), intelKeys.news(t));
+  const events = mergeEvents(sec.events, news.events);
+  return (
+    <GlassCard title="SEC filings & company news" icon={<Zap />} collapseId="stock-intel" actions={<Link to={`/catalysts?tab=filings&ticker=${ticker}`} className="text-[11px] text-neon-cyan hover:underline">All filings</Link>}>
+      <EventList
+        events={events}
+        loading={sec.loading && news.loading}
+        error={sec.error && news.error ? `${sec.error} · ${news.error}` : undefined}
+        sources={[...(sec.sources ?? []), ...(news.sources ?? [])]}
+        fetchedAt={sec.fetchedAt}
+        stale={sec.stale || news.stale}
+        onRefresh={() => {
+          sec.onRefresh();
+          news.onRefresh();
+        }}
+        limit={10}
+        emptyTitle={`No recent filings or tagged news for $${ticker}`}
+      />
+    </GlassCard>
   );
 }

@@ -56,8 +56,17 @@ export interface StockShareMeta {
   /** Company name from the local reference directory (not market data) */
   company?: string;
 }
+/** Structured card shared into chat (events, predictions, Why-Is-It-Moving findings, briefing items). */
+export type SharedCard =
+  | { type: 'event'; event: import('./intel').IntelEvent }
+  | { type: 'prediction'; predictionId: string; snapshot: { symbol: string | null; title: string; direction: string; confidence: number; resolution_date: string | null; status: string } }
+  | { type: 'why'; symbol: string; window: string; verdict: string; evidence: { label: string; title: string; source: string; at: string; url: string }[] }
+  | { type: 'manual_catalyst'; catalystId: string; symbol: string; headline: string; catalyst_type: string; catalyst_date: string | null }
+  | { type: 'briefing'; date: string; kind: 'morning' | 'eod'; generatedAt: string; items: { label: string; title: string; source: string; url: string | null }[] };
+
 export interface MessageMetadata {
   stock?: StockShareMeta;
+  card?: SharedCard;
   mentions?: UUID[];
   tickers?: string[];
 }
@@ -273,6 +282,179 @@ export interface PriceAlert {
   updated_at: ISODateTime;
 }
 
+
+/* ───────── v3: portfolio simulator ───────── */
+export interface SimAccount {
+  id: UUID;
+  user_id: UUID;
+  starting_cash: number;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+export type SimDirection = 'long' | 'short';
+export interface SimPosition {
+  id: UUID;
+  owner_id: UUID;
+  symbol: string;
+  direction: SimDirection;
+  status: 'open' | 'closed';
+  shares: number;
+  avg_entry: number;
+  entry_date: ISODate;
+  opened_at: ISODateTime;
+  closed_at: ISODateTime | null;
+  target: number | null;
+  stop: number | null;
+  thesis: string | null;
+  catalyst: string | null;
+  notes: string | null;
+  realized_pnl: number;
+  closed_qty: number;
+  closed_value: number;
+  trade_idea_id: UUID | null;
+  mistakes: string | null;
+  lessons: string | null;
+  result_notes: string | null;
+  screenshots: string[];
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+export type SimTxType = 'open' | 'add' | 'reduce' | 'close';
+export interface SimTransaction {
+  id: UUID;
+  position_id: UUID;
+  user_id: UUID;
+  type: SimTxType;
+  shares: number;
+  price: number;
+  realized_pnl: number;
+  executed_at: ISODateTime;
+  note: string | null;
+  created_at: ISODateTime;
+}
+
+/* ───────── v3: research notes ───────── */
+export const RESEARCH_SECTIONS = ['bull', 'bear', 'catalysts', 'risks', 'valuation', 'technical', 'links', 'general'] as const;
+export type ResearchSection = (typeof RESEARCH_SECTIONS)[number];
+export interface ResearchNote {
+  id: UUID;
+  symbol: string;
+  section: ResearchSection;
+  content: string;
+  updated_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+export interface ResearchNoteHistory {
+  id: UUID;
+  note_id: UUID;
+  symbol: string;
+  section: ResearchSection;
+  content: string;
+  edited_by: UUID | null;
+  edited_at: ISODateTime;
+  created_at: ISODateTime;
+}
+
+/* ───────── v3: annotations, prefs, cache ───────── */
+export type UserPriority = 'low' | 'medium' | 'high' | 'critical';
+export interface EventAnnotation {
+  id: UUID;
+  event_key: string;
+  event: Record<string, unknown>;
+  priority: UserPriority | null;
+  note: string | null;
+  bookmarked: boolean;
+  updated_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+export interface NotificationPrefsRow {
+  id: UUID;
+  user_id: UUID;
+  prefs: Record<string, boolean>;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/* ───────── v3: briefings ───────── */
+export interface BriefingRow {
+  id: UUID;
+  user_id: UUID;
+  briefing_date: ISODate;
+  kind: 'morning' | 'eod';
+  generated_at: ISODateTime;
+  data_refreshed_at: ISODateTime | null;
+  sources: unknown;
+  snapshot: unknown;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/* ───────── v3: predictions ───────── */
+export const PREDICTION_TYPES = [
+  'price_target', 'direction', 'earnings_reaction', 'catalyst_outcome', 'fda_outcome', 'sec_financing_outcome',
+  'macro_reaction', 'short_thesis', 'long_thesis', 'volatility', 'custom',
+] as const;
+export type PredictionType = (typeof PREDICTION_TYPES)[number];
+export const PREDICTION_DIRECTIONS = ['bullish', 'bearish', 'neutral', 'volatility'] as const;
+export type PredictionDirection = (typeof PREDICTION_DIRECTIONS)[number];
+export const PREDICTION_STATUSES = ['open', 'correct', 'partial', 'incorrect', 'invalidated', 'expired'] as const;
+export type PredictionStatus = (typeof PREDICTION_STATUSES)[number];
+export interface Prediction {
+  id: UUID;
+  created_by: UUID;
+  symbol: string | null;
+  title: string;
+  prediction_type: PredictionType;
+  direction: PredictionDirection;
+  expected_move: number | null;
+  target_price: number | null;
+  downside_price: number | null;
+  time_horizon: string | null;
+  catalyst: string | null;
+  prediction_date: ISODate;
+  resolution_date: ISODate | null;
+  confidence: number;
+  thesis: string | null;
+  invalidation: string | null;
+  notes: string | null;
+  baseline_price: number | null;
+  baseline_source: string | null;
+  baseline_at: ISODateTime | null;
+  status: PredictionStatus;
+  actual_outcome: string | null;
+  actual_move: number | null;
+  actual_price: number | null;
+  actual_price_source: string | null;
+  resolved_at: ISODateTime | null;
+  resolved_by: UUID | null;
+  result_notes: string | null;
+  lesson: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+export interface PredictionHistory {
+  id: UUID;
+  prediction_id: UUID;
+  change_type: 'create' | 'edit' | 'resolve' | 'note';
+  changed_by: UUID | null;
+  changed_at: ISODateTime;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+}
+export type PredictionLinkType = 'trade_idea' | 'position' | 'catalyst' | 'event' | 'news' | 'filing' | 'research';
+export interface PredictionLink {
+  id: UUID;
+  prediction_id: UUID;
+  link_type: PredictionLinkType;
+  ref_id: string;
+  label: string | null;
+  url: string | null;
+  created_by: UUID | null;
+  created_at: ISODateTime;
+}
+
 /** Table name → row type */
 export interface Tables {
   profiles: Profile;
@@ -290,6 +472,17 @@ export interface Tables {
   notifications: AppNotification;
   ticker_notes: TickerNote;
   price_alerts: PriceAlert;
+  sim_accounts: SimAccount;
+  sim_positions: SimPosition;
+  sim_transactions: SimTransaction;
+  research_notes: ResearchNote;
+  research_note_history: ResearchNoteHistory;
+  event_annotations: EventAnnotation;
+  notification_prefs: NotificationPrefsRow;
+  briefings: BriefingRow;
+  predictions: Prediction;
+  prediction_history: PredictionHistory;
+  prediction_links: PredictionLink;
 }
 export type TableName = keyof Tables;
 export type Row<K extends TableName> = Tables[K];
@@ -314,6 +507,17 @@ interface RequiredOnInsert {
   notifications: 'user_id' | 'type' | 'title';
   ticker_notes: 'symbol';
   price_alerts: 'user_id' | 'symbol' | 'condition' | 'price';
+  sim_accounts: 'user_id';
+  sim_positions: 'owner_id' | 'symbol' | 'direction' | 'avg_entry';
+  sim_transactions: 'position_id' | 'user_id' | 'type' | 'shares' | 'price';
+  research_notes: 'symbol' | 'section';
+  research_note_history: 'note_id' | 'symbol' | 'section' | 'content' | 'edited_at';
+  event_annotations: 'event_key';
+  notification_prefs: 'user_id';
+  briefings: 'user_id' | 'briefing_date';
+  predictions: 'created_by' | 'title' | 'direction' | 'confidence';
+  prediction_history: 'prediction_id' | 'change_type';
+  prediction_links: 'prediction_id' | 'link_type' | 'ref_id';
 }
 
 type Req<K extends TableName> = Extract<RequiredOnInsert[K], keyof Tables[K]>;

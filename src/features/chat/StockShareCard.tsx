@@ -10,6 +10,7 @@ import { TradingViewWidget, tv } from '@/components/widgets/TradingViewWidget';
 import { useWatchToggle } from '@/features/watchlist/api';
 import { useSettings } from '@/store/settingsStore';
 import { cn } from '@/lib/cn';
+import { WhyButton } from '@/features/why/WhyButton';
 
 /**
  * Shared-chart message card. Rebuilt from message metadata on every load:
@@ -52,6 +53,7 @@ export function StockShareCard({ meta, sharedBy, onReply }: { meta: StockShareMe
       <div className="flex flex-wrap items-center gap-1 px-2 py-2">
         {sharedBy && <span className="px-1 text-[11px] text-slate-500">Shared by {sharedBy}</span>}
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          <WhyButton symbol={ticker} compact />
           <CardBtn onClick={() => setFull(true)} icon={<Maximize2 className="h-3.5 w-3.5" />}>
             Full chart
           </CardBtn>

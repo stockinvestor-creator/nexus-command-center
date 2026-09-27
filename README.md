@@ -9,6 +9,8 @@ A private, two-person, futuristic stock-market command center with realtime chat
 - **Supabase** for Auth, Postgres (with Row Level Security), Realtime (chat, presence, typing) and Storage (chat images)
 - **Lucide** icons
 
+**v3 intelligence release:** Morning Briefing · Why Is It Moving? · Prediction Tracker · Catalyst Intelligence (SEC EDGAR filings + 8-K triggers, company news, policy, FDA) · Portfolio Simulator + P&L + trade journal · shared research pages · stock compare · economic calendar + macro dashboard · safe link previews · watchlist alerts · away presence · global search. See §10.
+
 > **Rule: real market data or no market data.** NEXUS never generates, simulates or back-fills prices. If a verified source isn't available, it shows *Market data unavailable* (or —).
 >
 > Without Supabase configured, the workspace (chat, watchlists, ideas) runs in a browser-only **local mode** for testing. Market data behaves exactly the same in both modes.
@@ -38,6 +40,7 @@ Requires Node 20+ (Netlify is pinned to Node 22 in `netlify.toml`).
 ### Step 2 — Run the SQL migration
 1. **SQL Editor → New query** → paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql) → **Run**.
    It creates all tables, indexes, foreign keys, RLS policies, the whitelist, triggers, RPC functions, the realtime publication and a private `attachments` storage bucket. It is idempotent — safe to re-run after updates.
+   Then run [`supabase/migrations/20260927_intelligence_release.sql`](supabase/migrations/20260927_intelligence_release.sql) the same way (v3 tables: simulator, research, briefings, predictions, annotations, notification prefs, intel cache). Additive and idempotent.
 2. Whitelist your two emails (same SQL editor):
    ```sql
    insert into public.allowed_emails (email) values
@@ -71,7 +74,11 @@ Optional: for **end-of-day** quotes *inside* NEXUS (enables price alerts and ope
    | `VITE_SUPABASE_URL` | `https://xxxx.supabase.co` | public |
    | `VITE_SUPABASE_ANON_KEY` | `eyJ...` | public by design (RLS) |
    | `VITE_MARKET_DATA_PROVIDER` | `tradingview` (or `alphavantage`) | public setting; `mock` is no longer valid |
-   | `MARKET_DATA_API_KEY` | your Alpha Vantage key | **server-side only**; only if using `alphavantage` |
+   | `MARKET_DATA_API_KEY` | your Alpha Vantage key | **server-side only**; only if using `alphavantage` (also enables the earnings calendar) |
+   | `SEC_USER_AGENT` | `NEXUS Command Center you@example.com` | **server-side**; required for SEC filings (SEC fair-access policy) |
+   | `MARKETAUX_API_KEY` | free key from marketaux.com | **server-side**; optional (company news) |
+   | `FRED_API_KEY` | free key from fred.stlouisfed.org | **server-side**; optional (macro dashboard + release calendar) |
+   | `OPENFDA_API_KEY` | free key from open.fda.gov | **server-side**; optional (works without) |
 
    Never create `VITE_` variables for secrets — anything prefixed `VITE_` ends up in browser JavaScript.
 
@@ -158,7 +165,9 @@ Older shared-stock messages may still contain price fields from the previous ver
 - Notifications: only the recipient can read; senders can't spoof `actor_id`.
 - Storage: private bucket; users can only upload into their own `<user_id>/` folder; images served via short-lived signed URLs.
 - Market API key never ships to the browser; the Netlify Function verifies the caller's Supabase session and only forwards a whitelist of read-only endpoints.
-- Chat content is rendered as text tokens (no `dangerouslySetInnerHTML`). Link previews never fetch the target page (no third-party preview service); YouTube links get a thumbnail.
+- Chat content is rendered as text tokens (no `dangerouslySetInnerHTML`).
+- Link previews: fetched only by the `link-preview` Netlify Function for signed-in members. It blocks private/loopback/link-local/metadata addresses (checked again after DNS resolution and on every redirect, max 3), allows only ports 80/443, times out after 5 s, reads at most 512 KB of HTML, never executes page JavaScript and returns only title/description/site/image — never article bodies. Finviz links are never fetched. SEC filing links are described from EDGAR's official data.
+- Every intel function (SEC, news, FDA, policy, macro, previews) verifies the caller's Supabase session and keeps its keys server-side. Nothing secret is ever in a `VITE_` variable.
 
 ---
 
@@ -166,16 +175,20 @@ Older shared-stock messages may still contain price fields from the previous ver
 
 ```
 supabase/schema.sql          tables, indexes, RLS, whitelist, triggers, RPC, realtime, storage
-netlify/functions/market.ts  server-side Alpha Vantage proxy (key stays secret)
+supabase/migrations/         v3 additive migration (run once after schema.sql)
+netlify/functions/           market (Alpha Vantage proxy), sec, news, fda, policy, macro, link-preview, intel-status
+netlify/lib/                 shared server code: auth, cache (memory → intel_cache), SSRF-safe fetch, source clients
 netlify.toml                 build, SPA redirects, headers, Node version
 src/
   components/  layout (shell, sidebar, top bar, mobile nav, ticker tape, ⌘K palette),
                ui (glass cards, badges, modal, toasts…), charts (StockChart, Sparkline),
                effects (Three.js background), widgets (TradingView embeds)
-  features/    auth, chat, market, watchlist, catalysts, trades, notifications
+  features/    auth, chat, market, watchlist, catalysts, trades, notifications,
+               intel (event cards/lists, calendar, macro), briefing, why, predictions, portfolio, research
   hooks/       useLiveTable (query + realtime), useMarket, useMarketQuery, …
   lib/         env, supabase client, formatting, NYSE market clock, $TICKER parsing
-  pages/       Command Center, Markets, Watchlist, Catalysts, War Room, Messages, Groups, Settings, Stock detail
+  pages/       Command Center, Briefing, Catalysts, Why, Markets, Watchlist, Research, Compare, Portfolio,
+               Predictions, War Room, Messages, Groups, Settings, Stock detail
   providers/   RealtimeProvider (presence, typing, unread, notifications, price alerts)
   services/    market providers (TradingView, Alpha Vantage) + symbol directory + cache; data backend (Supabase, or browser-only local mode)
   store/       zustand stores (auth, settings, realtime, market status, toasts)
@@ -187,7 +200,7 @@ src/
 
 ## 8. Keyboard & usage tips
 
-- **⌘K / Ctrl+K** or **/** — jump to any ticker or page.
+- **⌘K / Ctrl+K** or **/** — search everything: tickers, SEC forms (type `8-K`), catalysts, notes, predictions, chat.
 - Type **`$MU`** anywhere in chat, comments or notes → clickable ticker chip.
 - **@DisplayName** mentions notify your partner.
 - Chat: **Enter** send · **Shift+Enter** newline · paste an image to attach · 📈 button shares a live ticker card.
@@ -198,3 +211,23 @@ src/
 - NYSE holidays are listed in `src/lib/marketClock.ts` through 2027 — extend yearly.
 - To allow more than two accounts, edit `limit_allowed_emails()` in the SQL.
 - Charts use TradingView Lightweight Charts™ (Apache-2.0); the required TradingView attribution logo/link is shown on every chart.
+
+---
+
+## 10. Intelligence release (v3)
+
+**What matters today? Why is this stock moving? Was my thesis actually right?**
+
+| Feature | Where | Data |
+|---|---|---|
+| Morning Briefing | `/briefing` | Market overview (TradingView live + FRED values), today's US releases (FRED calendar + FOMC dates; times only when the source publishes them), watchlist catalysts, overnight SEC filings with trigger category, 24h watchlist news, simulated portfolio check (**PRICE UNAVAILABLE** without a verified quote provider), upcoming earnings, rules-based high-priority flags (each shows its rule), predictions due, what changed since the last briefing, sources used + timestamps. Stored daily in `briefings`; history by date; **Refresh** is limited to once per 5 minutes. `kind = 'eod'` is reserved for an end-of-day brief using the same pipeline. |
+| Why Is It Moving? | `/why`, drawer from any **Why?** button (stock page, watchlist, movers, chat cards, positions, briefing) | Windows 1h/3h/Today/24h/3d/7d. Price action from TradingView (plus provider bars when configured). Evidence tiers **CONFIRMED / STRONGLY RELATED / POSSIBLY RELATED / NO CONFIRMED CATALYST FOUND** with the rule for each item. Tiers describe evidence, never causation; no narrative is generated. |
+| Prediction Tracker | `/predictions` | USER PREDICTIONS with confidence as the author's own number (not a probability model). Originals immutable; every edit/resolution logged in `prediction_history`; resolved predictions lock (DB trigger). Scorecard with sample sizes, calibration by confidence band, timeline. A resolution is *suggested* only from real provider bars; the user confirms. |
+| Catalyst Intelligence | `/catalysts` | SEC EDGAR (official endpoints; `SEC_USER_AGENT` required), 8-K item triggers, earnings/reports, shareholder meetings, company events (Marketaux), policy (Federal Register + Fed), FDA (openFDA — never mapped to tickers by guessing), saved items, manual catalysts (labelled **Manual catalyst**). Priority / note / bookmark are USER ANALYSIS, stored separately from the source facts. |
+| Portfolio Simulator | `/portfolio` | Paper positions only. Average-cost and realized P&L maths run atomically in Postgres (`sim_open_position`, `sim_apply_transaction`). P&L dashboard with n shown on every statistic, trade journal (mistakes, lessons, screenshots), scenario calculator. |
+| Research & Compare | `/research/:symbol`, `/compare?symbols=` | Shared thesis sections with history + "last edited by"; source bar (TradingView, SEC, Finviz, Yahoo, Nasdaq; IR only if you saved it). Compare renders TradingView charts/quotes. |
+| Markets additions | `/markets` | Screener presets, NEXUS curated lists (labelled), Finviz shortcut links (links only — never scraped), economic calendar, macro dashboard. |
+| Alerts & presence | Settings → Notifications | Categories: messages, mentions, watchlist catalyst, new SEC filing, trade/prediction updates, partner-shared catalyst, price alerts. Browser permission is requested only when you click. Presence shows **away** after 5 min idle / 60 s hidden (presence only — typing and away status are never written to the database). |
+| Global search | ⌘K / Ctrl+K | Tickers, companies, SEC forms, catalysts, research notes, predictions, trade ideas, chat, and news/filings already loaded. |
+
+**Free-tier budgets.** SEC: responses cached 10 min (tickers map 24 h) in memory and in the shared `intel_cache` table. Marketaux: max 12 tickers per request, per-ticker cache shared by both users with a TTL that scales with ticker count so round-the-clock use stays under ~90 requests/day; a hard guard stops at 95/day and serves the last cached copy with its timestamp. FRED/Federal Register/openFDA: 30–60 min caches. Every panel shows *SOURCE · checked N min ago*, and *Cached copy from …* when serving stale data.

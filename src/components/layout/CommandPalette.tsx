@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/ui/Modal';
-import { SymbolSearch } from '@/features/market/SymbolSearch';
+import { GlobalSearch } from './GlobalSearch';
 import { NAV } from './nav';
 import { create } from 'zustand';
 
@@ -30,16 +30,8 @@ export function CommandPalette() {
   }, [setOpen]);
 
   return (
-    <Modal open={open} onClose={() => setOpen(false)} title="Search" size="md">
-      <SymbolSearch
-        inline
-        autoFocus
-        placeholder="Ticker, company, or industry… (Enter to open)"
-        onSelect={(m) => {
-          setOpen(false);
-          navigate(`/stock/${encodeURIComponent(m.tvSymbol)}`);
-        }}
-      />
+    <Modal open={open} onClose={() => setOpen(false)} title="Search everything" size="md">
+      <GlobalSearch onDone={() => setOpen(false)} />
       <p className="label mb-2 mt-5">Jump to</p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         {NAV.map((n) => (

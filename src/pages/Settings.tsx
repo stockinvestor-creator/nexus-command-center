@@ -19,6 +19,7 @@ import { marketData, PROVIDER_OPTIONS, selectedProviderId, setProviderOverride }
 import { cacheStats, clearMarketCache } from '@/services/market/requestCache';
 import { invalidateMarketQueries } from '@/hooks/useMarketQuery';
 import { browserNotificationsSupported, notifyUsers, requestBrowserPermission } from '@/features/notifications/api';
+import { PREF_KEYS, PREF_META, useNotificationPrefs } from '@/features/notifications/prefs';
 import { env, isSupabaseConfigured } from '@/lib/env';
 import { fmtDateTime, timeAgo } from '@/lib/format';
 import { nextEodRefresh } from '@/lib/marketClock';
@@ -271,6 +272,7 @@ export default function Settings() {
             Send test notification
           </Button>
           {perm === 'denied' && <p className="mt-2 text-[11px] text-slate-500">Blocked in your browser — re-enable in site settings.</p>}
+          <NotificationCategories />
         </GlassCard>
 
         <GlassCard title="Visual effects" icon={<Sparkles />}>
@@ -339,6 +341,19 @@ export default function Settings() {
           </GlassCard>
         )}
       </div>
+    </div>
+  );
+}
+
+function NotificationCategories() {
+  const { prefs, set } = useNotificationPrefs();
+  return (
+    <div className="mt-4 border-t border-white/[0.05] pt-3">
+      <p className="label mb-2">Alert categories (toast + browser)</p>
+      {PREF_KEYS.map((k) => (
+        <Toggle key={k} checked={prefs[k]} onChange={(v) => void attempt(() => set(k, v))} label={PREF_META[k].label} description={PREF_META[k].description} />
+      ))}
+      <p className="mt-2 text-[11px] text-slate-500">Watchlist alerts reuse the same SEC and news data as Catalyst Intelligence and the Morning Briefing — no extra API budget.</p>
     </div>
   );
 }

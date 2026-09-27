@@ -1,9 +1,10 @@
+import { Fragment } from 'react';
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useSettings } from '@/store/settingsStore';
-import { useRealtime } from '@/store/realtimeStore';
+import { presenceOf, useRealtime } from '@/store/realtimeStore';
 import { useAuth } from '@/store/authStore';
 import { Avatar } from '@/components/ui/Avatar';
 import { NAV } from './nav';
@@ -34,15 +35,17 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
-        {NAV.map((item) => (
+        {NAV.map((item, idx) => (
+          <Fragment key={item.to}>
+          {(idx === 0 || NAV[idx - 1].group !== item.group) &&
+            (collapsed ? (idx > 0 && <div className="mx-3 my-2 h-px bg-white/[0.06]" />) : <p className={cn('px-3 pb-1 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-600', idx > 0 && 'pt-3')}>{item.group}</p>)}
           <NavLink
-            key={item.to}
             to={item.to}
             end={item.to === '/'}
             title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                'group relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm transition-colors',
+                'group relative flex h-9 items-center gap-3 rounded-xl px-3 text-sm transition-colors',
                 isActive ? 'text-white' : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100',
               )
             }
@@ -71,6 +74,7 @@ export function Sidebar() {
               </>
             )}
           </NavLink>
+          </Fragment>
         ))}
       </nav>
 
@@ -79,7 +83,7 @@ export function Sidebar() {
         <div className={cn('space-y-1.5', collapsed && 'flex flex-col items-center')}>
           {profiles.map((p) => (
             <div key={p.id} className="flex items-center gap-2.5 px-1" title={p.display_name}>
-              <Avatar profile={p} size={26} online={online.some((o) => o.id === p.id)} />
+              <Avatar profile={p} size={26} online={presenceOf(online, p.id)} />
               {!collapsed && (
                 <span className="truncate text-xs text-slate-300">
                   {p.display_name}

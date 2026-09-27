@@ -16,20 +16,26 @@
 type Params = Record<string, string>;
 
 const ALLOWED: Record<string, (p: URLSearchParams) => Params | null> = {
-  TIME_SERIES_DAILY: (p) => sym(p) && { symbol: sym(p)!, outputsize: 'compact' },
-  TIME_SERIES_WEEKLY: (p) => sym(p) && { symbol: sym(p)! },
+  TIME_SERIES_DAILY: (p) => (sym(p) ? { symbol: sym(p)!, outputsize: 'compact' } : null),
+  TIME_SERIES_WEEKLY: (p) => (sym(p) ? { symbol: sym(p)! } : null),
   TIME_SERIES_INTRADAY: (p) => {
     const interval = p.get('interval') ?? '';
     if (!sym(p) || !['1min', '5min', '15min', '30min', '60min'].includes(interval)) return null;
     return { symbol: sym(p)!, interval, outputsize: 'compact', extended_hours: 'false' };
   },
-  GLOBAL_QUOTE: (p) => sym(p) && { symbol: sym(p)! },
-  OVERVIEW: (p) => sym(p) && { symbol: sym(p)! },
+  GLOBAL_QUOTE: (p) => (sym(p) ? { symbol: sym(p)! } : null),
+  OVERVIEW: (p) => (sym(p) ? { symbol: sym(p)! } : null),
   SYMBOL_SEARCH: (p) => {
     const k = (p.get('keywords') ?? '').trim();
     return k && k.length <= 40 && /^[\w .&'-]+$/.test(k) ? { keywords: k } : null;
   },
   TOP_GAINERS_LOSERS: () => ({}),
+  // CSV response; optional symbol filter
+  EARNINGS_CALENDAR: (p) => {
+    const s = p.get('symbol');
+    if (s && !sym(p)) return null;
+    return { horizon: '3month', ...(s ? { symbol: sym(p)! } : {}) };
+  },
 };
 
 function sym(p: URLSearchParams): string | null {
@@ -46,6 +52,7 @@ const TTL: Record<string, number> = {
   TIME_SERIES_INTRADAY: 4 * HOUR,
   GLOBAL_QUOTE: 4 * HOUR,
   TOP_GAINERS_LOSERS: 4 * HOUR,
+  EARNINGS_CALENDAR: 12 * HOUR,
 };
 
 const memory = new Map<string, { body: string; exp: number }>();
@@ -100,7 +107,10 @@ export default async (req: Request): Promise<Response> => {
     'Netlify-CDN-Cache-Control': `public, durable, s-maxage=${ttl}, stale-while-revalidate=${ttl}`,
     'X-Proxy-Cache': 'HIT',
   };
-  if (hit && hit.exp > Date.now()) return json(200, hit.body, cacheHeaders);
+  if (hit && hit.exp > Date.now()) {
+    if (fn === 'EARNINGS_CALENDAR') return new Response(JSON.parse(hit.body) as string, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', ...cacheHeaders } });
+    return json(200, hit.body, cacheHeaders);
+  }
 
   let upstream: Response;
   try {
@@ -112,6 +122,13 @@ export default async (req: Request): Promise<Response> => {
   }
   const body = await upstream.text();
   if (!upstream.ok) return json(502, { error: `Upstream error ${upstream.status}` });
+
+  // Earnings calendar is CSV
+  if (fn === 'EARNINGS_CALENDAR') {
+    if (!body.startsWith('symbol,')) return json(200, body);
+    memory.set(key, { body: JSON.stringify(body), exp: Date.now() + ttl * 1000 });
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', ...cacheHeaders, 'X-Proxy-Cache': 'MISS' } });
+  }
 
   // Never cache rate-limit / premium / error payloads
   let cacheable = true;

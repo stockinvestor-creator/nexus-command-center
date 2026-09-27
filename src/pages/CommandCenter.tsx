@@ -10,6 +10,9 @@ import { CatalystAlerts } from '@/features/catalysts/CatalystAlerts';
 import { RecentMessages } from '@/features/chat/RecentMessages';
 import { ActiveTrades, PortfolioTracker } from '@/features/trades/DashboardTrades';
 import { useAuth } from '@/store/authStore';
+import { BriefingWidget } from '@/features/briefing/BriefingWidget';
+import { WhyWidget } from '@/features/why/WhyQuick';
+import { OpenPredictionsWidget, ResolvedPredictionsWidget } from '@/features/predictions/PredictionWidgets';
 
 function greeting() {
   const h = new Date().getHours();
@@ -28,12 +31,17 @@ export default function CommandCenter() {
       <PageHeader title="Command Center" subtitle={`${greeting()}${name ? `, ${name}` : ''}. Real market data or no market data.`} />
       <div className="grid grid-cols-1 gap-3 px-3 sm:px-5 lg:grid-cols-12">
         <MarketStatusPanel className="lg:col-span-12" />
+        <BriefingWidget className="lg:col-span-8" />
+        <WhyWidget className="lg:col-span-4" />
         <MarketMovers className="lg:col-span-12" />
         <MarketHeatmap className="lg:col-span-12" />
 
         <WatchlistMini className="lg:col-span-4" />
         <CatalystAlerts className="lg:col-span-4" />
         <ActiveTrades className="lg:col-span-4" />
+
+        <OpenPredictionsWidget className="lg:col-span-6" />
+        <ResolvedPredictionsWidget className="lg:col-span-6" />
 
         <RecentMessages className="lg:col-span-6" />
         <PortfolioTracker className="lg:col-span-6" />

@@ -1,5 +1,7 @@
 import type { Insert, Patch, Row, TableName } from '@/types/db';
 
+export type RpcName = 'sim_open_position' | 'sim_apply_transaction';
+
 export interface QueryOptions<K extends TableName> {
   eq?: Partial<Row<K>>;
   in?: { column: keyof Row<K> & string; values: (string | number)[] };
@@ -26,6 +28,8 @@ export interface PresenceUser {
   name: string;
   color: string;
   online_at: string;
+  /** "away" after inactivity / hidden tab. Presence only — never stored in the database. */
+  status?: 'active' | 'away';
 }
 
 export interface TypingEvent {
@@ -38,6 +42,7 @@ export interface RealtimeRoom {
   onPresence(cb: (users: PresenceUser[]) => void): () => void;
   onTyping(cb: (e: TypingEvent) => void): () => void;
   sendTyping(channelId: string): void;
+  setStatus(status: 'active' | 'away'): void;
   leave(): void;
 }
 
@@ -67,6 +72,9 @@ export interface Backend {
     cb: (e: ChangeEvent<Row<K>>) => void,
     filter?: { column: keyof Row<K> & string; value: string },
   ): () => void;
+
+  /** Call a Postgres function (RPC). LocalBackend emulates the ones NEXUS uses. */
+  rpc<T = unknown>(fn: RpcName, args: Record<string, unknown>): Promise<T>;
 
   unreadCounts(): Promise<Record<string, number>>;
   getOrCreateDm(otherUserId: string): Promise<string>;

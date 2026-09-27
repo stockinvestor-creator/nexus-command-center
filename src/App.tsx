@@ -19,6 +19,12 @@ const Groups = lazy(() => import('@/pages/Groups'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const StockDetail = lazy(() => import('@/pages/StockDetail'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
+const Briefing = lazy(() => import('@/pages/Briefing'));
+const WhyMoving = lazy(() => import('@/pages/WhyMoving'));
+const Portfolio = lazy(() => import('@/pages/Portfolio'));
+const Predictions = lazy(() => import('@/pages/Predictions'));
+const Research = lazy(() => import('@/pages/Research'));
+const Compare = lazy(() => import('@/pages/Compare'));
 
 /** Show the setup wizard on the very first visit when Supabase isn't configured yet. */
 function FirstRun({ children }: { children: ReactNode }) {
@@ -64,6 +70,13 @@ export default function App() {
           <Route path="groups" element={<Groups />} />
           <Route path="settings" element={<Settings />} />
           <Route path="stock/:symbol" element={<StockDetail />} />
+          <Route path="briefing" element={<Briefing />} />
+          <Route path="why" element={<WhyMoving />} />
+          <Route path="portfolio" element={<Portfolio />} />
+          <Route path="predictions" element={<Predictions />} />
+          <Route path="research" element={<Research />} />
+          <Route path="research/:symbol" element={<Research />} />
+          <Route path="compare" element={<Compare />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

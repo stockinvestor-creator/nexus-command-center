@@ -1,3 +1,4 @@
+import { WhyQuickInput } from '@/features/why/WhyQuick';
 import { useState } from 'react';
 import { Activity, Flame, TrendingDown, TrendingUp } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -37,6 +38,7 @@ export function MarketMovers({ className }: { className?: string }) {
       title="Market Movers"
       icon={<Flame />}
       badge={<TradingViewBadge className="hidden sm:inline-flex" />}
+      actions={<WhyQuickInput className="hidden sm:flex" />}
       bodyClassName="p-0"
     >
       {!enabled ? (

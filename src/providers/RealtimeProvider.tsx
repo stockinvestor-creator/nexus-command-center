@@ -6,6 +6,8 @@ import { useRealtime } from '@/store/realtimeStore';
 import { toast } from '@/store/toastStore';
 import { showBrowserNotification } from '@/features/notifications/api';
 import { usePriceAlertWatcher } from '@/features/market/usePriceAlertWatcher';
+import { useWatchlistAlerts } from '@/features/notifications/useWatchlistAlerts';
+import { prefForType, useNotificationPrefs } from '@/features/notifications/prefs';
 
 /**
  * One realtime room for the whole workspace (presence + typing), plus global listeners for
@@ -32,7 +34,28 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       useRealtime.getState().addTyping(e.channelId, { userId: e.userId, name: e.name, at: Date.now() }),
     );
     const prune = window.setInterval(() => useRealtime.getState().pruneTyping(), 1500);
+    // away after 5 min without input or 60 s with the tab hidden (presence only, nothing stored)
+    let last = Date.now();
+    let hiddenSince: number | null = null;
+    const touch = () => {
+      last = Date.now();
+      if (document.visibilityState === 'visible') room.setStatus('active');
+    };
+    const onVis = () => {
+      hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
+      if (!hiddenSince) touch();
+    };
+    const idle = window.setInterval(() => {
+      const away = Date.now() - last > 5 * 60_000 || (hiddenSince != null && Date.now() - hiddenSince > 60_000);
+      room.setStatus(away ? 'away' : 'active');
+    }, 15_000);
+    const evs = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    evs.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    document.addEventListener('visibilitychange', onVis);
     return () => {
+      window.clearInterval(idle);
+      evs.forEach((e) => window.removeEventListener(e, touch));
+      document.removeEventListener('visibilitychange', onVis);
       offP();
       offT();
       window.clearInterval(prune);
@@ -59,6 +82,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   // notifications → toast + optional browser notification
   const path = location.pathname + location.search;
+  const { prefs } = useNotificationPrefs();
   useEffect(() => {
     if (!userId) return;
     return backend.subscribe(
@@ -67,14 +91,17 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         if (e.type !== 'INSERT' || !e.new || e.new.user_id !== userId) return;
         const n = e.new;
         if (n.link && path.startsWith(n.link)) return; // already looking at it
+        const pref = prefForType(n.type);
+        if (pref && !prefs[pref]) return; // muted category (still listed in the bell)
         toast.info(n.title, n.body ?? undefined, n.link ?? undefined);
         showBrowserNotification(n.title, n.body, n.link);
       },
       { column: 'user_id', value: userId },
     );
-  }, [userId, path]);
+  }, [userId, path, prefs]);
 
   usePriceAlertWatcher();
+  useWatchlistAlerts();
 
   return <>{children}</>;
 }

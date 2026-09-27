@@ -1,5 +1,94 @@
 # Changelog
 
+## 3.0.0 — Intelligence release (2026-09-27)
+
+Two specs in one release, built on v2 ("real market data or no market data"):
+**(A)** Catalyst Intelligence, SEC feed + 8-K triggers, watchlist alerts, Portfolio Simulator + P&L, browser notifications, typing/away presence, shared research pages, compare, economic calendar, safe link previews, screener + Finviz shortcuts, FDA/policy/macro feeds, global search.
+**(B)** Morning Briefing, Why Is It Moving?, Prediction Tracker (+ scorecard/calibration), all reusing the same data layer.
+
+Nothing in this release generates prices, news, filings, timestamps, probabilities or explanations. Every external item links to its source and shows when NEXUS last checked it.
+
+### 1. New SQL — run once
+`supabase/migrations/20260927_intelligence_release.sql` (Supabase → SQL Editor → paste → Run).
+- **Additive + idempotent**: `create table if not exists`, `create or replace function`, `drop policy if exists` → `create policy`. No existing table, column, row or policy is changed or dropped.
+- Tables: `sim_accounts`, `sim_positions`, `sim_transactions` (append-only), `research_notes`, `research_note_history`, `event_annotations`, `notification_prefs`, `intel_cache`, `briefings`, `predictions`, `prediction_history`, `prediction_links`.
+- Functions: `sim_open_position`, `sim_apply_transaction` (security invoker, owner check, average-cost + realized P&L), `log_research_note_history`, `guard_prediction_update` (immutable originals, lock after resolution), `log_prediction_history`.
+- RLS on every new table (members read; owners write; predictions editable only by their author and only while open; deletable only within 1 hour while open; notification prefs private; briefings written only by their owner).
+- Added to the realtime publication.
+- Verified in Postgres (PGlite) with two users: runs twice cleanly; simulator maths; RLS denials; history; locking.
+- `supabase/schema.sql` is unchanged. Fresh installs: run `schema.sql`, then the migration.
+
+### 2. New environment variables (Netlify → Site configuration → Environment variables; **no `VITE_` prefix**)
+| Variable | Required? | Used by |
+|---|---|---|
+| `SEC_USER_AGENT` | **Yes, for SEC data** — e.g. `NEXUS Command Center you@example.com` | `sec`, `link-preview` |
+| `MARKETAUX_API_KEY` | Optional (news shows "not configured" without it) | `news` |
+| `FRED_API_KEY` | Optional (macro dashboard + release calendar) | `macro` |
+| `OPENFDA_API_KEY` | Optional (openFDA works keyless at a lower limit) | `fda` |
+| `MARKET_DATA_API_KEY` | Existing; now also enables the earnings calendar | `market` |
+
+No new `VITE_` variables. No paid provider is required.
+
+### 3. New Netlify Functions
+`netlify/functions/sec.ts` · `news.ts` · `fda.ts` · `policy.ts` · `macro.ts` · `link-preview.ts` · `intel-status.ts`
+(shared code in `netlify/lib/`). All require a signed-in Supabase session, keep keys server-side, cache in memory + the shared `intel_cache` table, and fall back to the last good copy **with its timestamp**. `market.ts` gained `EARNINGS_CALENDAR`.
+
+### 4. Files added (64)
+- **Functions / server:** `netlify/functions/{sec,news,fda,policy,macro,link-preview,intel-status}.ts`, `netlify/lib/{auth,cache,env,http,respond,safeFetch,sec,marketaux,fda,fred,policy}.ts`, `tsconfig.functions.json`
+- **SQL:** `supabase/migrations/20260927_intelligence_release.sql`
+- **Pages:** `src/pages/{Briefing,WhyMoving,Predictions,Portfolio,Research,Compare}.tsx` (and `Catalysts.tsx` rewritten as Catalyst Intelligence)
+- **Briefing:** `src/features/briefing/{build.ts,useBriefing.ts,BriefingWidget.tsx}`
+- **Why:** `src/features/why/{evidence.ts,WhyPanel.tsx,WhyDrawer.tsx,WhyButton.tsx,WhyQuick.tsx}`, `src/store/whyStore.ts`
+- **Predictions:** `src/features/predictions/{api.ts,PredictionForm.tsx,ResolveModal.tsx,PredictionDetail.tsx,PredictionCard.tsx,PredictionWidgets.tsx}`
+- **Portfolio:** `src/features/portfolio/{api.ts,PositionForm.tsx}`
+- **Intel:** `src/types/intel.ts`, `src/services/intel/client.ts`, `src/hooks/useIntel.ts`, `src/features/intel/{EventCard,EventList,SourceStatus,EconomicCalendar,MacroDashboard}.tsx`, `src/features/intel/{annotations,time,useMyTickers,policySectors}.ts`
+- **Research / markets:** `src/features/research/{ResearchSourceBar.tsx,api.ts}`, `src/features/market/ScreenerShortcuts.tsx`
+- **Chat / notifications / search:** `src/features/chat/{ShareCardModal,SharedCardView}.tsx`, `src/features/notifications/{prefs.ts,useWatchlistAlerts.ts}`, `src/components/layout/GlobalSearch.tsx`
+- **Moved:** `src/features/catalysts/ManualCatalysts.tsx` (the v2 catalyst feed, now the *Manual catalysts* tab)
+
+### 5. Files changed (36)
+`package.json` (v3.0.0; build also typechecks functions), `package-lock.json` (`@types/node`), `netlify/functions/market.ts`,
+`src/App.tsx` (routes), `src/types/db.ts` (new row types + chat `SharedCard`), `src/lib/format.ts`,
+`src/services/backend/{types,supabaseBackend,localBackend,localSeed}.ts` (RPC; local-mode emulation of the new triggers/RPCs; away presence),
+`src/components/layout/{AppShell,CommandPalette,Sidebar,nav}.tsx|ts` (grouped nav, global search, Why drawer), `src/components/ui/Avatar.tsx` (away dot), `src/components/widgets/TradingViewWidget.tsx` (screener `market: 'us'` fix),
+`src/features/chat/{MessageItem,LinkPreview,StockShareCard,ChannelList,api}.tsx|ts` (shared cards, safe previews, Why button),
+`src/features/market/{MarketMovers,ProviderMovers}.tsx`, `src/features/watchlist/WatchlistMini.tsx`,
+`src/pages/{Catalysts,CommandCenter,Markets,Messages,Settings,StockDetail,Watchlist}.tsx`,
+`src/providers/RealtimeProvider.tsx` (alert categories, watchlist alerts, idle → away), `src/store/realtimeStore.ts`, `.env.example`, `README.md`, `CHANGELOG.md`.
+
+### 6. Files removed
+None. (`src/pages/Catalysts.tsx`'s v2 content moved to `src/features/catalysts/ManualCatalysts.tsx`.)
+
+### 7. Local setup
+```bash
+npm install
+cp .env.example .env.local        # optional: Supabase + keys
+npm run dev                       # UI at http://localhost:5173 (local mode works without Supabase)
+# To run the data functions locally too:
+npx netlify-cli dev               # serves functions at /.netlify/functions/*; reads server-side vars from .env / Netlify
+npm run build                     # typecheck app + functions, then production build
+```
+Without the functions running, intel panels say *Data functions not deployed* — they never show sample data.
+
+### 8. Git commands
+```bash
+git add .
+git commit -m "Add catalyst intelligence portfolio and collaboration features, morning briefing, prediction tracking and movement intelligence"
+git push
+```
+
+### 9. Netlify changes
+1. Add the environment variables in §2 (at minimum `SEC_USER_AGENT`). Scope: all (functions need them at runtime).
+2. No build-setting changes: `netlify.toml` already points functions to `netlify/functions` (esbuild bundles `netlify/lib` automatically).
+3. Run the SQL migration in Supabase **before** or right after this deploy.
+4. One production deploy (≈15 of the 300 free monthly credits).
+
+### 10. Verification done
+- `npm run build` (app + functions typecheck, Vite build) passes.
+- Server functions exercised with the real code and upstream responses replaced by documented-format fixtures: SEC submissions + Atom (exact times only from the Atom feed), 8-K item classification, Marketaux budget guard, FRED calendar/series, Federal Register, openFDA, SSRF blocks (loopback, RFC1918, link-local/metadata, IPv6 ULA, mapped IPv4, redirects, non-standard ports, credentials).
+- 58 browser checks (Playwright) against the production build + fixture functions: briefing generation/sections/rate-limit, simulator maths (+$50 on 5 @ 110 vs 100), prediction create → resolve → lock → history → scorecard, Why verdicts (CONFIRMED / NO CONFIRMED CATALYST FOUND / Potentially related), chat cards + Finviz preview without fetching, research history, compare, global search, markets additions, stock page, alert settings, and no horizontal overflow at 390 px on five pages.
+- Not verifiable from the build sandbox (no internet): live TradingView rendering and live SEC/Marketaux/FRED/Federal Register/openFDA responses. Check these after deploying.
+
 ## 2.0.0 — Real market data or no market data (2026-09-26)
 
 NEXUS no longer contains any code that generates, simulates or back-fills market data. Every market visual is an official TradingView widget. Values NEXUS draws itself only appear when a real API provider is configured, and always carry **source · status · last updated**. When no verified data exists, the UI says *Market data unavailable*.

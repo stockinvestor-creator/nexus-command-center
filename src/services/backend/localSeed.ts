@@ -275,5 +275,16 @@ export function seedLocalDb(): LocalDB {
     notifications: [],
     ticker_notes: [],
     price_alerts: [],
+    sim_accounts: [],
+    sim_positions: [],
+    sim_transactions: [],
+    research_notes: [],
+    research_note_history: [],
+    event_annotations: [],
+    notification_prefs: [],
+    briefings: [],
+    predictions: [],
+    prediction_history: [],
+    prediction_links: [],
   };
 }

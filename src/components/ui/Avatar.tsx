@@ -1,7 +1,7 @@
 import type { Profile } from '@/types/db';
 import { cn } from '@/lib/cn';
 
-export function Avatar({ profile, size = 32, online, className }: { profile?: Pick<Profile, 'display_name' | 'avatar_color' | 'avatar_url'> | null; size?: number; online?: boolean; className?: string }) {
+export function Avatar({ profile, size = 32, online, className }: { profile?: Pick<Profile, 'display_name' | 'avatar_color' | 'avatar_url'> | null; size?: number; online?: boolean | 'away'; className?: string }) {
   const name = profile?.display_name ?? '?';
   const initials = name
     .split(/\s+/)
@@ -30,8 +30,9 @@ export function Avatar({ profile, size = 32, online, className }: { profile?: Pi
         <span
           className={cn(
             'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-void-800',
-            online ? 'bg-emerald-400' : 'bg-slate-600',
+            online === 'away' ? 'bg-amber-400' : online ? 'bg-emerald-400' : 'bg-slate-600',
           )}
+          title={online === 'away' ? 'Away' : online ? 'Online' : 'Offline'}
         />
       )}
     </span>

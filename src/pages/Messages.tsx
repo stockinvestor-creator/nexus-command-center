@@ -4,7 +4,7 @@ import { ArrowDown, ArrowLeft, Hash, Lock, Pin, Search, Users, X } from 'lucide-
 import { useLiveTable } from '@/hooks/useLiveTable';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useAuth } from '@/store/authStore';
-import { useRealtime } from '@/store/realtimeStore';
+import { presenceOf, useRealtime } from '@/store/realtimeStore';
 import { backend } from '@/services/backend';
 import type { Channel, Message } from '@/types/db';
 import { ChannelList } from '@/features/chat/ChannelList';
@@ -241,7 +241,7 @@ function ChatView({ channel, members, onBack }: { channel: Channel; members: { c
             <ArrowLeft className="h-4 w-4" />
           </button>
           {channel.type === 'dm' ? (
-            <Avatar profile={dmPartner} size={24} online={online.some((o) => o.id === dmPartner?.id)} />
+            <Avatar profile={dmPartner} size={24} online={presenceOf(online, dmPartner?.id)} />
           ) : channel.type === 'group' ? (
             <Lock className="h-4 w-4 text-slate-500" />
           ) : (

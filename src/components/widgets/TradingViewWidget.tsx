@@ -176,7 +176,7 @@ export const tv = {
     ...base,
     width: '100%',
     height: '100%',
-    market: 'america',
+    market: 'us',
     defaultScreen,
     defaultColumn,
     showToolbar,

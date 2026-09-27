@@ -1,14 +1,14 @@
 {
   "name": "nexus-command-center",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "Private two-person futuristic market command center and realtime chat. Runs at $0/month on Netlify + Supabase free tiers.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.functions.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.functions.json"
   },
   "engines": {
     "node": ">=20"
@@ -26,6 +26,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@types/node": "^22.20.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/three": "^0.180.0",

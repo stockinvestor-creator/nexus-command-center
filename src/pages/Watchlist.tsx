@@ -1,3 +1,4 @@
+import { WhyButton } from '@/features/why/WhyButton';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Edit3, FolderPlus, ListFilter, Pencil, Plus, Star, StickyNote, Trash2 } from 'lucide-react';
@@ -319,6 +320,7 @@ export default function WatchlistPage() {
                           <div className={trendClass(q?.changePercent)}>{q ? fmtPct(q.changePercent) : ''}</div>
                         </div>
                       )}
+                      <WhyButton symbol={i.symbol} compact />
                       <IconButton label="Edit" onClick={() => setEditing(i)}>
                         <Edit3 className="h-4 w-4" />
                       </IconButton>
@@ -396,7 +398,8 @@ function WatchRow({ item: i, quote: q, showQuotes, onFav, onEdit, onRemove }: { 
         )}
       </td>
       <td className="px-3 py-2.5">
-        <div className="flex justify-end gap-0.5 opacity-60 transition group-hover:opacity-100">
+        <div className="flex items-center justify-end gap-0.5">
+          <WhyButton symbol={i.symbol} compact className="mr-1" />
           <IconButton label="Edit" onClick={onEdit}>
             <Edit3 className="h-4 w-4" />
           </IconButton>

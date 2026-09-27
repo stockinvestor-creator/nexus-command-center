@@ -53,5 +53,11 @@ export const useRealtime = create<RealtimeState>((set, get) => ({
   clearUnread: (channelId) => set((s) => ({ unread: { ...s.unread, [channelId]: 0 } })),
 }));
 
+/** true = active, 'away' = connected but idle/hidden, false = offline */
+export const presenceOf = (online: PresenceUser[], userId: string | null | undefined): boolean | 'away' => {
+  const u = userId ? online.find((o) => o.id === userId) : undefined;
+  return u ? (u.status === 'away' ? 'away' : true) : false;
+};
+
 export const useIsOnline = (userId: string | null | undefined) =>
   useRealtime((s) => (userId ? s.online.some((u) => u.id === userId) : false));

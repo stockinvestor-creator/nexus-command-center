@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import type { Channel, Profile } from '@/types/db';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/store/authStore';
-import { useRealtime } from '@/store/realtimeStore';
+import { presenceOf, useRealtime } from '@/store/realtimeStore';
 import { backend } from '@/services/backend';
 import { attempt } from '@/store/toastStore';
 import { cn } from '@/lib/cn';
@@ -87,7 +87,7 @@ export function ChannelList({ channels, members, activeId }: { channels: Channel
             .map((p) => {
               const key = [me, p.id].sort().join(':');
               const ch = dms.find((c) => c.dm_key === key);
-              const isOnline = online.some((o) => o.id === p.id);
+              const isOnline = presenceOf(online, p.id);
               const label = p.id === me ? `${p.display_name} (notes to self)` : p.display_name;
               return ch ? (
                 <Row key={p.id} to={`/messages/${ch.id}`} icon={<Avatar profile={p} size={20} online={isOnline} />} label={label} unread={unread[ch.id] ?? 0} active={ch.id === activeId} />
